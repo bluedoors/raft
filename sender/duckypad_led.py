@@ -9,7 +9,7 @@ per call (no persistent handle → dodges the macOS keypress-lock bug) and
 NO-OPS SILENTLY (exit 0) whenever the pad is absent or busy.
 
 Usage:
-  duckypad_led.py <workspace_ordinal> <state>   # state: working|needs|done|off
+  duckypad_led.py <workspace_ordinal> <state>   # state: working|needs|done|idle|off
   duckypad_led.py --index <0-14> <R> <G> <B>    # light a raw physical LED (calibration)
   duckypad_led.py --all-off                     # clear all 15 LEDs
 
@@ -24,8 +24,9 @@ NEOPIXEL_COUNT = 15
 # state -> RGB
 STATE_COLOR = {
     "working": (255, 120, 0),    # amber: session active / thinking
-    "needs":   (0, 90, 255),     # blue: waiting on you (permission / input)
-    "done":    (0, 200, 0),      # green: finished, your turn
+    "needs":   (0, 90, 255),     # blue: BLOCKED — a permission / approval prompt
+    "done":    (0, 200, 0),      # green: just finished, your turn
+    "idle":    (40, 0, 60),      # dim purple: finished + waiting a while (idle notification)
     "off":     (0, 0, 0),        # cleared
 }
 

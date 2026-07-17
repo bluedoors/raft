@@ -8,7 +8,7 @@
       { "hooks": [ { "type": "command", "command": "/usr/bin/python3 /path/to/raft/sender/duckypad_hook.py working", "async": true } ] }
     ],
     "Notification": [
-      { "hooks": [ { "type": "command", "command": "/usr/bin/python3 /path/to/raft/sender/duckypad_hook.py needs", "async": true } ] }
+      { "hooks": [ { "type": "command", "command": "/usr/bin/python3 /path/to/raft/sender/duckypad_hook.py notify", "async": true } ] }
     ],
     "Stop": [
       { "hooks": [ { "type": "command", "command": "/usr/bin/python3 /path/to/raft/sender/duckypad_hook.py done", "async": true } ] }

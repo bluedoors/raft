@@ -6,7 +6,8 @@ Notification/Stop/SessionEnd). Resolves the FIRING SESSION's own cmux workspace
 ordinal (not the focused one) via `cmux identify`, then sets that workspace's
 duckyPad key LED by sudo-ing the root-owned LED script.
 
-  duckypad_hook.py <state>        # state: working|needs|done|off
+  duckypad_hook.py <state>        # state: working|needs|done|idle|off
+  duckypad_hook.py notify         # Notification event: reads payload, picks needs vs idle
   duckypad_hook.py --resolve      # print resolved ordinal (debug), no LED
 
 Runs as the user (needs the cmux env that Claude Code hooks inherit); the LED
@@ -34,7 +35,11 @@ LED_SCRIPT = "/usr/local/libexec/duckypad_led.py"
 # Root-owned venv interpreter (pinned in /etc/sudoers.d/duckypad). Must match
 # the sudoers entry exactly. Built on the system /usr/bin/python3 (root:wheel).
 LED_PY = "/usr/local/libexec/duckypad-venv/bin/python3"
-VALID_STATES = {"working", "needs", "done", "off"}
+VALID_STATES = {"working", "needs", "done", "idle", "off"}
+
+# The idle "waiting for your input" Notification vs a real permission/approval
+# prompt. Matched (case-insensitive) against the Notification payload's message.
+IDLE_NOTIFICATION_MARKERS = ("waiting for your input", "is waiting for")
 
 
 def _cmux_json(args):
@@ -59,10 +64,12 @@ def resolve_ordinal():
 
 
 def main(argv):
-    # Drain stdin (hooks pipe JSON); we don't need it — cmux identify is the key.
+    # Read the hook payload (JSON on stdin). Needed for the Notification event to
+    # tell an idle "waiting for input" notice from a real permission prompt.
+    payload = ""
     try:
         if not sys.stdin.isatty():
-            sys.stdin.read()
+            payload = sys.stdin.read()
     except Exception:
         pass
 
@@ -73,7 +80,20 @@ def main(argv):
         print(resolve_ordinal())
         return 0
 
-    state = argv[0].lower()
+    mode = argv[0].lower()
+    if mode == "notify":
+        # idle "waiting for input" -> idle (dim purple); anything else
+        # (permission / approval prompt) -> needs (blue).
+        msg = ""
+        try:
+            msg = (json.loads(payload).get("message") or "").lower()
+        except Exception:
+            pass
+        state = "idle" if any(m in msg for m in IDLE_NOTIFICATION_MARKERS) else "needs"
+        _log(f"NOTIFY msg={msg[:160]!r} -> {state}")
+    else:
+        state = mode
+
     if state not in VALID_STATES:
         _log(f"FIRED state={argv[0]!r} INVALID_STATE")
         return 0
