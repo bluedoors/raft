@@ -8,7 +8,9 @@
 
 The top row is per-workspace keys whose **LEDs show live agent status** (amber = working, blue = needs you, green = done) and whose **presses jump to that workspace** (⌘1–5). The lower rows are Claude Code + cmux action macros (new workspace, next workspace, jump-to-unread, plan mode, interrupt, yes/no, `/clear`, `/compact`, rewind).
 
-Inspired by **[OpenAI's Codex Micro](https://mashable.com/tech/openai-first-physical-release-is-micro-keyboard)** — OpenAI's first physical product, a Work Louder × OpenAI Supply macropad whose dedicated keys light up to show your coding agents' status. Raft reproduces the useful 80% — glanceable per-agent status + command keys — on an original (2020) duckyPad you may already own. (The OpenAI keycap in the photo above is a fitting coincidence.)
+Inspired by **[OpenAI's Codex Micro](https://mashable.com/tech/openai-first-physical-release-is-micro-keyboard)** — OpenAI's first physical product, a Work Louder × OpenAI Supply macropad whose dedicated keys light up to show your coding agents' status. Raft reproduces the useful 80% — glanceable per-agent status + command keys — on an original (2020) duckyPad you may already own. (That's a Claude keycap on the *Yes* key in the photo.)
+
+Raft is **built for Claude Code** — the status LEDs are driven by Claude Code lifecycle hooks and the action keys are Claude Code / cmux commands. But the firmware, LED protocol, and layout are **agent-agnostic**: point the hooks at another agent's events and swap the macro keys, and the same board works for Codex or anything else that can run a hook on start/stop/idle.
 
 ---
 
