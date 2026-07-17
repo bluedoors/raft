@@ -2,11 +2,13 @@
 
 **A [duckyPad](https://github.com/dekuNukem/duckyPad) turned into a live status + control surface for a *raft* of [Claude Code](https://www.anthropic.com/claude-code) agents running in [cmux](https://github.com/manaflow-ai/cmux).**
 
+![Raft — an original duckyPad in landscape, its keys lit to show live Claude Code agent status per workspace](media/raft-hero.jpeg)
+
 > *A group of ducks resting on the water is called a **raft**. This is your control raft: one physical key per workspace, its LED showing what that agent is doing right now, and a press to jump straight to it — plus a row of Claude Code / cmux action macros.*
 
 The top row is per-workspace keys whose **LEDs show live agent status** (amber = working, blue = needs you, green = done) and whose **presses jump to that workspace** (⌘1–5). The lower rows are Claude Code + cmux action macros (new workspace, next workspace, jump-to-unread, plan mode, interrupt, yes/no, `/clear`, `/compact`, rewind).
 
-Inspired by the Work Louder × OpenAI "Codex Micro" — reproduced on an original (2020) duckyPad you may already own.
+Inspired by **[OpenAI's Codex Micro](https://mashable.com/tech/openai-first-physical-release-is-micro-keyboard)** — OpenAI's first physical product, a Work Louder × OpenAI Supply macropad whose dedicated keys light up to show your coding agents' status. Raft reproduces the useful 80% — glanceable per-agent status + command keys — on an original (2020) duckyPad you may already own. (The OpenAI keycap in the photo above is a fitting coincidence.)
 
 ---
 
@@ -36,6 +38,41 @@ Two independent channels, exactly like the Codex Micro's frosted status keys:
 
 - **Outbound** is just a normal USB-HID keyboard profile — no special software. `⌘1–5` jump cmux workspaces; other keys send Claude Code / cmux shortcuts.
 - **Inbound**: a Claude Code hook fires on each lifecycle event, resolves *which workspace the firing session belongs to* via `cmux identify` (not the focused one — a background agent finishing still lights its own key), and sends one `0x04` packet to that key. Opening the HID interface needs root on macOS, so the LED writer runs behind a locked-down NOPASSWD-sudo helper. Each call opens/closes the device (no daemon, no persistent handle), and no-ops silently when the pad is unplugged.
+
+---
+
+## Key layout — the sample `cmux` profile
+
+Held in **landscape with the USB cable at top-left** (this is the default profile in
+[`profile/profile_cmux/`](profile/profile_cmux); edit [`profile/duckypad_build_profile.py`](profile/duckypad_build_profile.py) to change it):
+
+```
+┌────────┬────────┬────────┬────────┬────────┐
+│  WS1   │  WS2   │  WS3   │  WS4   │  WS5   │  ← workspace status LEDs + jump (⌘1–5)
+├────────┼────────┼────────┼────────┼────────┤
+│ Unread │ New WS │ Next WS│  Plan  │ Intrpt │  ← navigation / mode
+├────────┼────────┼────────┼────────┼────────┤
+│  Yes   │   No   │ /clear │/compact│ Rewind │  ← Claude Code actions
+└────────┴────────┴────────┴────────┴────────┘
+```
+
+| Key | Sends | Does | LED |
+|---|---|---|---|
+| **WS1–WS5** (top row) | `⌘1`–`⌘5` | Jump to cmux workspace 1–5 | **live agent status** — amber = working, blue = needs you, green = done |
+| Unread | `⌘⇧U` | Jump to most-recent unread workspace | static |
+| New WS | `⌘N` | New cmux workspace | static |
+| Next WS | `⌃⌘]` | Next workspace | static |
+| Plan | `⇧Tab` | Cycle Claude Code permission mode (normal → auto-accept → plan) | static |
+| Intrpt | `Esc` | Interrupt Claude | static |
+| Yes | `Enter` | Accept the default on a permission prompt | static |
+| No | `Esc` | Reject / dismiss | static |
+| /clear | `/clear` ⏎ | Clear the conversation | static |
+| /compact | `/compact` ⏎ | Compact the conversation | static |
+| Rewind | `Esc` `Esc` | Open the rewind / checkpoint picker | static |
+
+The top row is the heart of it: each key both **shows** a workspace's agent status (its LED) and **jumps** to it (its keystroke). The lower rows only depend on which workspace you just focused — jump with the top row, then act.
+
+> **Physical-key mapping:** in this landscape orientation the profile files map by physical key number — top row = `key3/6/9/12/15`, middle = `key2/5/8/11/14`, bottom = `key1/4/7/10/13` — and LED index = key-file number − 1. See [`docs/calibration.md`](docs/calibration.md).
 
 ---
 
@@ -92,7 +129,7 @@ docs/       calibration, teardown
 
 - [duckyPad](https://github.com/dekuNukem/duckyPad) by dekuNukem — the hardware and firmware this builds on (MIT).
 - [cmux](https://github.com/manaflow-ai/cmux) — the workspace manager and Claude Code hook bridge.
-- Concept inspiration: Work Louder × OpenAI Supply "Codex Micro."
+- Concept inspiration: [OpenAI's Codex Micro](https://mashable.com/tech/openai-first-physical-release-is-micro-keyboard) (Work Louder × OpenAI Supply) — OpenAI's first physical product.
 
 ## License
 
