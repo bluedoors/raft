@@ -70,7 +70,7 @@ Held in **landscape with the USB cable at top-left** (this is the default profil
 | No | types `no` ⏎ | Decline a prompt | static |
 | /clear | `/clear` ⏎ | Clear the conversation | static |
 | /compact | `/compact` ⏎ | Compact the conversation | static |
-| Auto/Pl | *(unassigned)* | Placeholder for a plan / auto-accept mode key — bind e.g. `⇧Tab` | static |
+| Auto/Pl | `⇧Tab` | Cycle Claude Code permission mode (normal → auto-accept → plan) | static |
 
 The top row is the heart of it: each key both **shows** a workspace's agent status (its LED) and **jumps** to it (its keystroke). The lower rows only depend on which workspace you just focused — jump with the top row, then act.
 

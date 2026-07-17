@@ -31,7 +31,7 @@ KEYS = {
     4:  ("No",      "STRING no\nENTER",            (90, 0, 0)),
     7:  ("/clear",  "STRING /clear\nENTER",        (90, 45, 0)),
     10: ("compact", "STRING /compact\nENTER",      (90, 45, 0)),
-    13: ("Auto/Pl", "",                            (60, 0, 90)),  # placeholder — no binding yet
+    13: ("Auto/Pl", "SHIFT TAB",                   (60, 0, 90)),  # cycle plan / auto-accept mode
     # middle row (navigation / mode)
     2:  ("Unread",  "GUI SHIFT u",                 (0, 50, 60)),
     5:  ("New WS",  "GUI n",                       (0, 50, 60)),
