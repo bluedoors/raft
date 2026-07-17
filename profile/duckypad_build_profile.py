@@ -27,16 +27,16 @@ OUT = os.path.join(_HERE, "profile_cmux")
 # physical key number -> (label<=7ch, duckyScript source, (r,g,b) color)
 KEYS = {
     # bottom row (Claude Code actions)
-    1:  ("Yes",     "ENTER",                       (0, 90, 0)),
-    4:  ("No",      "ESCAPE",                      (90, 0, 0)),
+    1:  ("Yes",     "STRING yes\nENTER",           (0, 90, 0)),
+    4:  ("No",      "STRING no\nENTER",            (90, 0, 0)),
     7:  ("/clear",  "STRING /clear\nENTER",        (90, 45, 0)),
     10: ("compact", "STRING /compact\nENTER",      (90, 45, 0)),
-    13: ("Rewind",  "ESCAPE\nESCAPE",              (60, 0, 90)),
+    13: ("Auto/Pl", "",                            (60, 0, 90)),  # placeholder — no binding yet
     # middle row (navigation / mode)
     2:  ("Unread",  "GUI SHIFT u",                 (0, 50, 60)),
     5:  ("New WS",  "GUI n",                       (0, 50, 60)),
     8:  ("Next WS", "CTRL GUI ]",                  (0, 50, 60)),
-    11: ("Plan",    "SHIFT TAB",                   (0, 50, 60)),
+    11: ("Rewind",  "ESCAPE\nESCAPE",              (60, 5, 28)),
     14: ("Intrpt",  "ESCAPE",                      (90, 20, 0)),
     # top row (workspace jump + status LED; hooks override the color live)
     3:  ("WS1",     "GUI 1",                       (25, 25, 25)),

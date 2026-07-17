@@ -1,1 +1,2 @@
-ESCAPE
+STRING no
+ENTER

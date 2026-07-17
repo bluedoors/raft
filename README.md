@@ -52,9 +52,9 @@ Held in **landscape with the USB cable at top-left** (this is the default profil
 ┌────────┬────────┬────────┬────────┬────────┐
 │  WS1   │  WS2   │  WS3   │  WS4   │  WS5   │  ← workspace status LEDs + jump (⌘1–5)
 ├────────┼────────┼────────┼────────┼────────┤
-│ Unread │ New WS │ Next WS│  Plan  │ Intrpt │  ← navigation / mode
+│ Unread │ New WS │ Next WS│ Rewind │ Intrpt │  ← navigation / actions
 ├────────┼────────┼────────┼────────┼────────┤
-│  Yes   │   No   │ /clear │/compact│ Rewind │  ← Claude Code actions
+│  Yes   │   No   │ /clear │compact │ Auto/Pl│  ← Claude Code actions
 └────────┴────────┴────────┴────────┴────────┘
 ```
 
@@ -64,13 +64,13 @@ Held in **landscape with the USB cable at top-left** (this is the default profil
 | Unread | `⌘⇧U` | Jump to most-recent unread workspace | static |
 | New WS | `⌘N` | New cmux workspace | static |
 | Next WS | `⌃⌘]` | Next workspace | static |
-| Plan | `⇧Tab` | Cycle Claude Code permission mode (normal → auto-accept → plan) | static |
+| Rewind | `Esc` `Esc` | Open the rewind / checkpoint picker | static |
 | Intrpt | `Esc` | Interrupt Claude | static |
-| Yes | `Enter` | Accept the default on a permission prompt | static |
-| No | `Esc` | Reject / dismiss | static |
+| Yes | types `yes` ⏎ | Confirm a prompt | static |
+| No | types `no` ⏎ | Decline a prompt | static |
 | /clear | `/clear` ⏎ | Clear the conversation | static |
 | /compact | `/compact` ⏎ | Compact the conversation | static |
-| Rewind | `Esc` `Esc` | Open the rewind / checkpoint picker | static |
+| Auto/Pl | *(unassigned)* | Placeholder for a plan / auto-accept mode key — bind e.g. `⇧Tab` | static |
 
 The top row is the heart of it: each key both **shows** a workspace's agent status (its LED) and **jumps** to it (its keystroke). The lower rows only depend on which workspace you just focused — jump with the top row, then act.
 
