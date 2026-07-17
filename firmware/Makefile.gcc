@@ -1,0 +1,131 @@
+# GCC/arm-none-eabi Makefile for the duckyPad evo firmware (STM32F072C8T6).
+# Reproduces the Keil MDK-ARM build (lul.uvprojx) with the GNU toolchain so the
+# firmware can be built on macOS/Linux. Adds the SET_LED_SINGLE HID command.
+#
+#   make -f Makefile.gcc            # build build/duckypad_evo.{elf,bin,hex}
+#   make -f Makefile.gcc TOOLCHAIN=/path/to/bin/   # if arm-none-eabi-* not on PATH
+#
+# Flash the .bin with:  dfu-util -a 0 -s 0x08000000:leave -D build/duckypad_evo.bin
+
+TARGET   = duckypad_evo
+BUILD    = build
+TOOLCHAIN ?=
+CC  = $(TOOLCHAIN)arm-none-eabi-gcc
+CP  = $(TOOLCHAIN)arm-none-eabi-objcopy
+SZ  = $(TOOLCHAIN)arm-none-eabi-size
+
+CPU = -mcpu=cortex-m0 -mthumb -mfloat-abi=soft
+DEFS = -DUSE_HAL_DRIVER -DSTM32F072xB
+
+INCLUDES = \
+  -IInc \
+  -IDrivers/STM32F0xx_HAL_Driver/Inc \
+  -IDrivers/STM32F0xx_HAL_Driver/Inc/Legacy \
+  -IMiddlewares/Third_Party/FatFs/src \
+  -IMiddlewares/ST/STM32_USB_Device_Library/Core/Inc \
+  -IMiddlewares/ST/STM32_USB_Device_Library/Class/CustomHID/Inc \
+  -IDrivers/CMSIS/Device/ST/STM32F0xx/Include \
+  -IDrivers/CMSIS/Include
+
+CFLAGS = $(CPU) $(DEFS) $(INCLUDES) -Os -g -Wall -flto \
+  -ffunction-sections -fdata-sections -fcommon \
+  -Wno-error=int-conversion -Wno-error=implicit-function-declaration \
+  -Wno-error=incompatible-pointer-types
+
+LDSCRIPT = STM32F072C8Tx_FLASH.ld
+LDFLAGS = $(CPU) -specs=nano.specs -specs=nosys.specs -T$(LDSCRIPT) -flto -Os \
+  -Wl,-Map=$(BUILD)/$(TARGET).map,--cref -Wl,--gc-sections \
+  -lc -lm -lnosys
+
+STARTUP = startup_stm32f072xb_gcc.s
+
+C_SOURCES = \
+  Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal.c \
+  Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_cortex.c \
+  Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_dma.c \
+  Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_exti.c \
+  Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_flash.c \
+  Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_flash_ex.c \
+  Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_gpio.c \
+  Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_i2c.c \
+  Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_i2c_ex.c \
+  Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_pcd.c \
+  Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_pcd_ex.c \
+  Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_pwr.c \
+  Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_pwr_ex.c \
+  Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_rcc.c \
+  Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_rcc_ex.c \
+  Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_rtc.c \
+  Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_rtc_ex.c \
+  Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_spi.c \
+  Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_spi_ex.c \
+  Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_tim.c \
+  Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_tim_ex.c \
+  Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_uart.c \
+  Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_uart_ex.c \
+  Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_ll_usb.c \
+  Middlewares/ST/STM32_USB_Device_Library/Class/CustomHID/Src/usbd_customhid.c \
+  Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_core.c \
+  Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_ctlreq.c \
+  Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_ioreq.c \
+  Middlewares/Third_Party/FatFs/src/diskio.c \
+  Middlewares/Third_Party/FatFs/src/ff.c \
+  Middlewares/Third_Party/FatFs/src/ff_gen_drv.c \
+  Middlewares/Third_Party/FatFs/src/option/ccsbcs.c \
+  Middlewares/Third_Party/FatFs/src/option/syscall.c \
+  Src/cQueue.c \
+  Src/ds_vm.c \
+  Src/dsb_cache.c \
+  Src/fatfs.c \
+  Src/fonts.c \
+  Src/hid_task.c \
+  Src/input_task.c \
+  Src/keyboard.c \
+  Src/keypress_task.c \
+  Src/main.c \
+  Src/md5.c \
+  Src/neopixel.c \
+  Src/profiles.c \
+  Src/sd_util.c \
+  Src/shared.c \
+  Src/ssd1306.c \
+  Src/stm32f0xx_hal_msp.c \
+  Src/stm32f0xx_it.c \
+  Src/system_stm32f0xx.c \
+  Src/ui_task.c \
+  Src/usb_device.c \
+  Src/usbd_conf.c \
+  Src/usbd_custom_hid_if.c \
+  Src/usbd_desc.c \
+  Src/user_diskio.c
+
+OBJS  = $(addprefix $(BUILD)/,$(notdir $(C_SOURCES:.c=.o)))
+vpath %.c $(sort $(dir $(C_SOURCES)))
+OBJS += $(BUILD)/$(notdir $(STARTUP:.s=.o))
+vpath %.s $(sort $(dir $(STARTUP)))
+
+all: $(BUILD)/$(TARGET).elf $(BUILD)/$(TARGET).bin $(BUILD)/$(TARGET).hex
+
+$(BUILD)/%.o: %.c | $(BUILD)
+	$(CC) -c $(CFLAGS) -Wa,-a,-ad,-alms=$(BUILD)/$(notdir $(<:.c=.lst)) $< -o $@
+
+$(BUILD)/%.o: %.s | $(BUILD)
+	$(CC) -c $(CPU) $< -o $@
+
+$(BUILD)/$(TARGET).elf: $(OBJS)
+	$(CC) $(OBJS) $(LDFLAGS) -o $@
+	$(SZ) $@
+
+$(BUILD)/%.bin: $(BUILD)/%.elf
+	$(CP) -O binary -S $< $@
+
+$(BUILD)/%.hex: $(BUILD)/%.elf
+	$(CP) -O ihex $< $@
+
+$(BUILD):
+	mkdir -p $@
+
+clean:
+	rm -rf $(BUILD)
+
+.PHONY: all clean

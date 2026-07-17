@@ -1,0 +1,23 @@
+{
+  "_comment": "Merge this 'hooks' block into ~/.claude/settings.json (Claude Code). It drives the duckyPad status LEDs on session lifecycle events. All hooks are async (never block your session). Adjust the script path if you don't clone Raft to this location. Note: interrupting a turn fires NO hook, so an interrupted session stays 'working' until your next prompt (self-corrects on submit).",
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "/usr/bin/python3 /path/to/raft/sender/duckypad_hook.py working", "async": true } ] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "command", "command": "/usr/bin/python3 /path/to/raft/sender/duckypad_hook.py working", "async": true } ] }
+    ],
+    "Notification": [
+      { "hooks": [ { "type": "command", "command": "/usr/bin/python3 /path/to/raft/sender/duckypad_hook.py needs", "async": true } ] }
+    ],
+    "Stop": [
+      { "hooks": [ { "type": "command", "command": "/usr/bin/python3 /path/to/raft/sender/duckypad_hook.py done", "async": true } ] }
+    ],
+    "StopFailure": [
+      { "hooks": [ { "type": "command", "command": "/usr/bin/python3 /path/to/raft/sender/duckypad_hook.py done", "async": true } ] }
+    ],
+    "SessionEnd": [
+      { "hooks": [ { "type": "command", "command": "/usr/bin/python3 /path/to/raft/sender/duckypad_hook.py off", "async": true } ] }
+    ]
+  }
+}

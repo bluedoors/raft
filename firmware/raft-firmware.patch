@@ -1,0 +1,151 @@
+diff --git a/firmware/evo/Inc/neopixel.h b/firmware/evo/Inc/neopixel.h
+index 0edb890..2800898 100644
+--- a/firmware/evo/Inc/neopixel.h
++++ b/firmware/evo/Inc/neopixel.h
+@@ -58,6 +58,12 @@ void draw_settings_led(void);
+ void get_current_color(uint8_t which, uint8_t* red, uint8_t* green, uint8_t* blue);
+ void halt_all_animations(void);
+ 
++// Host LED override layer (HID_COMMAND_SET_LED_SINGLE). Survives keypress and
++// sleep/wake so PC-driven status colours persist; cleared on profile switch.
++void set_host_led(uint8_t which, uint8_t r, uint8_t g, uint8_t b);
++void reapply_host_leds(void);
++void clear_host_leds(void);
++
+ extern const uint8_t brightness_index_to_percent_lookup[BRIGHTNESS_LEVEL_SIZE];
+ extern volatile uint32_t frame_counter;
+ 
+diff --git a/firmware/evo/Src/hid_task.c b/firmware/evo/Src/hid_task.c
+index 86e9484..f9b4a6c 100644
+--- a/firmware/evo/Src/hid_task.c
++++ b/firmware/evo/Src/hid_task.c
+@@ -601,6 +601,34 @@ void parse_hid_msg(uint8_t* this_msg)
+       hid_tx_buf[2] = HID_RESPONSE_GENERIC_ERROR;
+     send_hid_cmd_response(hid_tx_buf);
+   }
++  /*
++    SET LED SINGLE
++    -----------
++    PC to duckyPad:
++    [0]   Usage ID, always 5
++    [1]   Unused
++    [2]   Command
++    [3]   LED index (0 to NEOPIXEL_COUNT-1)
++    [4]   Red
++    [5]   Green
++    [6]   Blue
++    -----------
++    duckyPad to PC
++    [0]   Usage ID, always 4
++    [1]   Unused
++    [2]   Status, 0 = OK
++    Colour is shown immediately and registered as a host override, so it
++    persists across keypresses and sleep/wake (until the profile is switched).
++  */
++  else if(command_type == HID_COMMAND_SET_LED_SINGLE)
++  {
++    uint8_t led_index = this_msg[3];
++    if(led_index >= NEOPIXEL_COUNT)
++      hid_tx_buf[2] = HID_RESPONSE_INVALID_ARG;
++    else
++      set_host_led(led_index, this_msg[4], this_msg[5], this_msg[6]);
++    send_hid_cmd_response(hid_tx_buf);
++  }
+   else // not a valid HID command
+   {
+     hid_tx_buf[2] = HID_RESPONSE_UNKNOWN_CMD;
+diff --git a/firmware/evo/Src/neopixel.c b/firmware/evo/Src/neopixel.c
+index 46d7770..7b9871f 100644
+--- a/firmware/evo/Src/neopixel.c
++++ b/firmware/evo/Src/neopixel.c
+@@ -258,6 +258,59 @@ void get_current_color(uint8_t which, uint8_t* red, uint8_t* green, uint8_t* blu
+ void halt_all_animations(void)
+ {
+   for (size_t i = 0; i < NEOPIXEL_COUNT; i++)
+-    neo_anime[i].animation_type = ANIMATION_NONE;  
++    neo_anime[i].animation_type = ANIMATION_NONE;
++}
++
++// ---- Host LED override layer (HID SET_LED_SINGLE) ----
++// A PC-set colour must survive (a) a keypress on that key and (b) a sleep/wake,
++// which reloads the profile and repaints every LED. We remember host colours
++// here, write them into the profile cache so keydown/keyup keep them, and
++// re-assert them after any same-profile repaint (see profiles.c goto_profile).
++static uint8_t host_led_active[NEOPIXEL_COUNT];
++static uint8_t host_led_rgb[NEOPIXEL_COUNT][THREE];
++
++static void apply_host_led(uint8_t which)
++{
++  // point default + keydown colours at the host colour so a keypress on this
++  // key fades back to it rather than the profile colour, then show it now.
++  for (uint8_t c = 0; c < THREE; c++)
++  {
++    curr_pf_info.sw_color_default[which][c] = host_led_rgb[which][c];
++    curr_pf_info.sw_color_keydown[which][c] = host_led_rgb[which][c];
++  }
++  set_pixel_3color_update_buffer(which, host_led_rgb[which][0],
++                                 host_led_rgb[which][1], host_led_rgb[which][2]);
++}
++
++void set_host_led(uint8_t which, uint8_t r, uint8_t g, uint8_t b)
++{
++  if(which >= NEOPIXEL_COUNT)
++    return;
++  host_led_active[which] = 1;
++  host_led_rgb[which][0] = r;
++  host_led_rgb[which][1] = g;
++  host_led_rgb[which][2] = b;
++  apply_host_led(which);
++  neopixel_draw_current_buffer();
++}
++
++void reapply_host_leds(void)
++{
++  uint8_t any = 0;
++  for (uint8_t i = 0; i < NEOPIXEL_COUNT; i++)
++  {
++    if(!host_led_active[i])
++      continue;
++    apply_host_led(i);
++    any = 1;
++  }
++  if(any)
++    neopixel_draw_current_buffer();
++}
++
++void clear_host_leds(void)
++{
++  for (uint8_t i = 0; i < NEOPIXEL_COUNT; i++)
++    host_led_active[i] = 0;
+ }
+ 
+diff --git a/firmware/evo/Src/profiles.c b/firmware/evo/Src/profiles.c
+index 07d7435..19a2ddf 100644
+--- a/firmware/evo/Src/profiles.c
++++ b/firmware/evo/Src/profiles.c
+@@ -8,6 +8,7 @@
+ #include "ui_task.h"
+ #include "ds_vm.h"
+ #include "keyboard.h"
++#include "neopixel.h"
+ 
+ const char settings_file_path[] = "/dpp_config.txt";
+ const char default_settings_file[] = "sleep_index 0\nbrightness_index 0\nlast_profile 1\nfw_ver 0.0.0\nkb_layout dpkm_English (US).txt\n";
+@@ -322,10 +323,17 @@ uint8_t goto_profile_without_updating_rgb_LED(uint8_t profile_number)
+ 
+ void goto_profile(uint8_t profile_number)
+ {
++  uint8_t prev_profile = current_profile_number;
+   if(goto_profile_without_updating_rgb_LED(profile_number))
+     return;
+   load_persistent_state();
+   neopixel_redraw_bg();
++  // Host LED overrides (PC status colours) survive a same-profile reload
++  // (e.g. wake-from-sleep) but are dropped when switching to another profile.
++  if(profile_number == prev_profile)
++    reapply_host_leds();
++  else
++    clear_host_leds();
+ }
+ 
+ void goto_next_profile(void)

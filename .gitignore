@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# macOS
+.DS_Store
+
+# local scratch / readback dumps
+*.readback.bin
+readback.bin
+
+# a local clone of upstream duckyPad for building firmware (don't vendor it)
+/duckyPad/
+/duckypad_config_src/
