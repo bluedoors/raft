@@ -60,6 +60,23 @@ addressing, so they are recorded here rather than summarised.
    query, and the no-match row is `Create worktree "<query>"` with the target repo auto-resolved
    from `eligibleRepos`/`activeRepoId`. A blind `⏎` after a query that matches nothing can create
    a worktree and branch. This shapes the outbound design below.
+10. **Palette behaviour, observed directly** (screenshot burst while a human typed; no `⏎` pressed):
+    - **Unique query** (`orca-host`): the palette renders a `WORKTREES` section *first*, the single
+      match (`orca-host-support`, badged with its repo) is the **highlighted** row, and
+      `Create worktree "orca-host"` is present but **last and unselected**. Footer: `Enter → Open`.
+      The query matched a substring of a longer display name, which is what the generator relies on.
+    - **Ambiguous query** (`main`): five worktree rows, identical names, distinguished only by a
+      repo badge; the highlighted row was `sa-assist`, an order matching neither the sidebar nor
+      alphabetical — the matcher's own ranking. Unpredictable, hence build-time uniqueness.
+    - **No-match query** (`zzqq`): exactly one row, `Create worktree "zzqq"`, **highlighted**.
+      Hazard confirmed, not theoretical.
+    - The palette also matches **open-tab content**, including agent message text, and
+      `ACTIONS & SETTINGS` entries. Ranking is `WORKTREES` → `OPEN TABS` → `ACTIONS & SETTINGS` →
+      create, so a worktree match always outranks the rest; a stale query that still matches a tab
+      or setting jumps somewhere harmless rather than creating anything.
+11. **`⌘J` from a focused terminal pane pops a toast** — "Terminal shortcut handled — Switch
+    worktree (⌘J)" — because `orca-first` policy reports shortcuts it captures from the terminal.
+    Cosmetic, dismissible, but it will appear on jumps; worth a README note.
 
 ## Why Orca differs from cmux
 
@@ -153,10 +170,13 @@ DELAY 400
 ENTER
 ```
 
+Sending `⏎` is justified by probe 10: for a unique query the highlighted row *is* the target
+worktree, because the `WORKTREES` section ranks above tabs, settings, and the create row.
+
 Both delays are load-bearing. The palette debounces its filtering (a 300 ms constant appears in
-the palette module), so pressing `⏎` too early can act on the pre-filter row list — and per probe
-9 that could be `Create worktree "<query>"`. `DELAY 400` is 300 ms plus margin; the exact values
-get tuned on hardware and recorded in `docs/calibration.md`.
+the palette module), so pressing `⏎` too early can act on the pre-filter row list — and per probes
+9 and 10 that could be `Create worktree "<query>"`. `DELAY 400` is 300 ms plus margin; the exact
+values get tuned on hardware and recorded in `docs/calibration.md`.
 
 Because a query that matches nothing can *create* a worktree, uniqueness is enforced at two
 points:
@@ -300,11 +320,15 @@ middle keys, and a top row generated per host (static `GUI <n>` for cmux, palett
 
 ## Still unverified
 
-1. **Palette macro timing and matcher semantics.** Needs a human at the keyboard (probe 8) — the
-   `DELAY` values and the claim that a unique substring selects its row rather than the create row
-   must be confirmed on hardware before the top row is trusted. Until then, treat the two-press
-   variant (type but don't send `⏎`) as the safe fallback; it is a one-line change in the
-   generator.
+1. **Palette macro timing at machine speed.** The *semantics* are settled (probe 10): a unique
+   query highlights its worktree, so `⏎` is safe for a verified board. What remains is timing — a
+   human types slowly, whereas the pad emits `STRING` in milliseconds, so the `DELAY` values must
+   be confirmed against the real debounce on hardware before the top row is trusted. Until then
+   the two-press variant (type, don't send `⏎`) remains a one-line change in the generator.
+
+   Residual risk, accepted: between a branch rename and the next `raft_board_verify.py` run, a key
+   press can create a worktree named after the stale query. Recovery is `orca worktree rm`, so the
+   severity is low; the README says to re-verify after renaming.
 2. **Does Orca regenerate the `hooks` block on upgrade?** Raft's and Orca's entries coexist today.
    *Fallback:* documented check plus re-merging `hooks/settings.snippet.json`.
 3. **Orca plugin API.** If plugins can register commands bound to keys (the keybinding validator
