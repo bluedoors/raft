@@ -54,7 +54,7 @@ are ≤7 characters (duckyPad limit).
 
 | Row | Keys | Purpose |
 |---|---|---|
-| **Top** | `WS1`–`WS5` (⌘1–⌘5) | Jump to cmux workspace 1–5. These are also the **status LEDs** — the hook overrides their color live (amber = working, blue = needs you, green = done). |
+| **Top** | `WS1`–`WS5` (⌘1–⌘5) | Jump to cmux workspace 1–5. These are also the **status LEDs** — the hook overrides their color live (amber = working, blue = needs you, green = done → fades off after 2 min, red = failed). |
 | **Middle** | Unread, New WS, Next WS, Plan, Intrpt | Navigation / mode: `⌘⇧U`, `⌘N`, `⌃⌘]`, `⇧⇥` (plan mode), `Esc` (interrupt). |
 | **Bottom** | Yes, No, /clear, compact, Rewind | Claude Code actions: Enter, Escape, `/clear`↵, `/compact`↵, Esc Esc. |
 

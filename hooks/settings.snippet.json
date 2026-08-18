@@ -14,7 +14,7 @@
       { "hooks": [ { "type": "command", "command": "/usr/bin/python3 /path/to/raft/sender/duckypad_hook.py done", "async": true } ] }
     ],
     "StopFailure": [
-      { "hooks": [ { "type": "command", "command": "/usr/bin/python3 /path/to/raft/sender/duckypad_hook.py done", "async": true } ] }
+      { "hooks": [ { "type": "command", "command": "/usr/bin/python3 /path/to/raft/sender/duckypad_hook.py failed", "async": true } ] }
     ],
     "SessionEnd": [
       { "hooks": [ { "type": "command", "command": "/usr/bin/python3 /path/to/raft/sender/duckypad_hook.py off", "async": true } ] }

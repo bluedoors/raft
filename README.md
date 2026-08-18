@@ -6,7 +6,7 @@
 
 > *A group of ducks resting on the water is called a **raft**. This is your control raft: one physical key per workspace, its LED showing what that agent is doing right now, and a press to jump straight to it — plus a row of Claude Code / cmux action macros.*
 
-The top row is per-workspace keys whose **LEDs show live agent status** (amber = working, blue = needs you, green = done) and whose **presses jump to that workspace** (⌘1–5). The lower rows are Claude Code + cmux action macros (new workspace, next workspace, jump-to-unread, plan mode, interrupt, yes/no, `/clear`, `/compact`, rewind).
+The top row is per-workspace keys whose **LEDs show live agent status** (amber = working, blue = needs you, green = done, red = failed) and whose **presses jump to that workspace** (⌘1–5). The lower rows are Claude Code + cmux action macros (new workspace, next workspace, jump-to-unread, plan mode, interrupt, yes/no, `/clear`, `/compact`, rewind).
 
 Inspired by **[OpenAI's Codex Micro](https://mashable.com/tech/openai-first-physical-release-is-micro-keyboard)** — OpenAI's first physical product, a Work Louder × OpenAI Supply macropad whose dedicated keys light up to show your coding agents' status. Raft reproduces the useful 80% — glanceable per-agent status + command keys — on an original (2020) duckyPad you may already own. (That's a Claude keycap on the *Yes* key in the photo.)
 
@@ -60,7 +60,7 @@ Held in **landscape with the USB cable at top-left** (this is the default profil
 
 | Key | Sends | Does | LED |
 |---|---|---|---|
-| **WS1–WS5** (top row) | `⌘1`–`⌘5` | Jump to cmux workspace 1–5 | **live agent status** — amber = working, blue = needs you, green = done |
+| **WS1–WS5** (top row) | `⌘1`–`⌘5` | Jump to cmux workspace 1–5 | **live agent status** — amber = working, blue = needs you, green = done (fades to off after 2 min), red = failed |
 | Unread | `⌘⇧U` | Jump to most-recent unread workspace | static |
 | New WS | `⌘N` | New cmux workspace | static |
 | Next WS | `⌃⌘]` | Next workspace | static |
@@ -123,6 +123,8 @@ docs/       calibration, teardown
 - **OLED stays portrait.** The firmware has no 90° OLED rotation, so held in landscape the OLED text reads sideways. The keys and LEDs are laid out for landscape; the OLED is a secondary channel (blank keycaps + LED color are the real interface).
 - **Uses flash beyond the datasheet spec.** The GCC/newlib image (~76 KB) exceeds the STM32F072C8's 64 KB spec. This die physically exposes 128 KB (the DFU descriptor reports it) and it's readback-verified on the test unit — but it's *technically out-of-spec*, so verify the readback on your own device. Fully recoverable: DFU is always available.
 - **Interrupt leaves it amber.** Claude Code fires no hook when you interrupt a turn, so an interrupted session stays "working" until your next prompt (then self-corrects). Accepted, not worked around.
+- **Green auto-fades to off.** A finished (green) WS LED switches itself off 2 min after the turn ends (`DUCKYPAD_FADE_SEC` to tune), so stale green doesn't linger. A detached, token-cancelled fader does this — any newer state (working/needs/idle/off, or a fresh done) supersedes the pending fade. Red (failed) does **not** fade; it stays lit until the next state.
+- **Requires cmux's `reorderOnNotification` off.** Both channels address workspaces by *sidebar position* — the LED writer via `index+1` and the ⌘1–5 jump via cmux's "select workspace N". cmux's `app.reorderOnNotification` (default **on**) bubbles a workspace to the top when it needs attention, which renumbers positions and desyncs the physical board. Set `"app": { "reorderOnNotification": false }` in `~/.config/cmux/cmux.json` and `cmux reload-config`. Raft's status LEDs replace what bubbling gave you. (Positions still shift if you *close* a middle workspace or drag rows — inherent to positional addressing.)
 - **Sleep.** Set the pad's sleep to a long value or Never — waking reloads the profile; the firmware's host-override layer re-asserts status colors on same-profile wake, but Never avoids the whole question.
 
 ---
