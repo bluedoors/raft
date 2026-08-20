@@ -39,6 +39,20 @@ LED_SCRIPT = "/usr/local/libexec/duckypad_led.py"
 LED_PY = "/usr/local/libexec/duckypad-venv/bin/python3"
 VALID_STATES = {"working", "needs", "done", "failed", "idle", "off"}
 
+# ── Orca host: agent state → LED state ───────────────────────────────────────
+# Orca's per-pane enum, in the order we resolve conflicts. A worktree can hold
+# several agent panes; the highest-precedence one owns the key, because a pane
+# that WANTS you outranks one that is merely busy or finished.
+ORCA_PRECEDENCE = ("waiting", "blocked", "working", "done", "interrupted", "idle")
+ORCA_TO_RAFT = {
+    "waiting":     "needs",    # blue: wants you now
+    "blocked":     "failed",   # red: can't proceed
+    "working":     "working",  # amber
+    "done":        "done",     # green (fades — see orca_led_state)
+    "interrupted": "idle",     # dim purple
+    "idle":        "idle",     # dim purple
+}
+
 # The "done" green is transient: hold it, then switch the WS LED to FADE_TO so a
 # stale green doesn't linger. Implemented as a self-spawned detached fader (no
 # daemon). Cancellation is token-based: every state change stamps a fresh token
@@ -80,6 +94,51 @@ def resolve_ordinal():
     except Exception:
         return None
     return None
+
+
+def _agent_state(agent):
+    """The precedence key for one pane. `interrupted` overrides the report."""
+    if agent.get("interrupted"):
+        return "interrupted"
+    state = (agent.get("state") or "").lower()
+    return state if state in ORCA_TO_RAFT else None
+
+
+def orca_led_state(agents, now_ms=None, fade_sec=None):
+    """Aggregate one worktree's agent panes into a single LED state.
+
+    A `done` older than the fade window resolves to "off" here rather than being
+    remembered somewhere: the mapping is a pure function of Orca's truth plus the
+    clock, so any repaint lands in the right place without bookkeeping.
+    """
+    if not agents:
+        return "off"
+    if now_ms is None:
+        now_ms = int(time.time() * 1000)
+    if fade_sec is None:
+        fade_sec = FADE_DELAY_SEC
+
+    best = None
+    for agent in agents:
+        state = _agent_state(agent)
+        if state is None:
+            continue
+        if state == "done":
+            updated = agent.get("updatedAt")
+            if isinstance(updated, int) and now_ms - updated >= fade_sec * 1000:
+                continue                      # stale green: as good as no pane
+        if best is None or ORCA_PRECEDENCE.index(state) < ORCA_PRECEDENCE.index(best):
+            best = state
+    return ORCA_TO_RAFT[best] if best else "off"
+
+
+def fade_deadline_ms(agents, fade_sec=None):
+    """Epoch ms at which the earliest live `done` in this list turns off."""
+    if fade_sec is None:
+        fade_sec = FADE_DELAY_SEC
+    stamps = [a.get("updatedAt") for a in (agents or [])
+              if _agent_state(a) == "done" and isinstance(a.get("updatedAt"), int)]
+    return min(stamps) + fade_sec * 1000 if stamps else None
 
 
 def _tok_path(ordinal):
