@@ -141,6 +141,30 @@ def fade_deadline_ms(agents, fade_sec=None):
     return min(stamps) + fade_sec * 1000 if stamps else None
 
 
+def detect(env=None, cmux_probe=None):
+    """Which host owns this session? Resolved from the FIRING session's env.
+
+    Orca is checked before cmux and short-circuits it: `cmux identify` reports a
+    caller, but a stale or fallback answer would silently light the wrong key, and
+    an Orca session is unambiguous.
+    """
+    env = os.environ if env is None else env
+    forced = (env.get("RAFT_HOST") or "").lower()
+    if forced == "off":
+        return None
+    if forced in ("orca", "cmux"):
+        return forced
+    if env.get("ORCA_WORKTREE_ID"):
+        return "orca"
+    probe = cmux_probe or resolve_ordinal
+    try:
+        if probe():
+            return "cmux"
+    except Exception:
+        pass
+    return None
+
+
 # ── Orca host: the board ─────────────────────────────────────────────────────
 # Orca's ⌘N indexes visible worktree rows in a project→repo→worktree tree, and
 # neither that order nor the collapse state is readable from its CLI, so Raft
