@@ -1,0 +1,5 @@
+GUI j
+DELAY 500
+STRING docs/claude-apps-gateway-cost-guide
+DELAY 400
+ENTER

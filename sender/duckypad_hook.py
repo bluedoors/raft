@@ -2,18 +2,25 @@
 """duckypad_hook.py — Claude Code hook bridge for the duckyPad status LEDs.
 
 Invoked by Claude Code lifecycle hooks (SessionStart/UserPromptSubmit/
-Notification/Stop/SessionEnd). Resolves the FIRING SESSION's own cmux workspace
-ordinal (not the focused one) via `cmux identify`, then sets that workspace's
-duckyPad key LED by sudo-ing the root-owned LED script.
+Notification/Stop/StopFailure/SessionEnd). Detects whether the FIRING SESSION
+belongs to Orca or cmux and paints accordingly: Orca repaints all five board
+keys from `orca worktree ps`, cmux sets the one key for its own workspace
+ordinal (resolved via `cmux identify`, not the focused workspace).
 
   duckypad_hook.py <state>        # state: working|needs|done|failed|idle|off
   duckypad_hook.py notify         # Notification event: reads payload, picks needs vs idle
-  duckypad_hook.py --resolve      # print resolved ordinal (debug), no LED
-  duckypad_hook.py --fade <ord> <token>  # internal: delayed green->off fader (self-spawned)
+  duckypad_hook.py --resolve      # print resolved cmux ordinal (debug), no LED
+  duckypad_hook.py --fade <ord> <token>   # internal: delayed green->off fader (cmux)
+  duckypad_hook.py --repaint-in <secs>    # internal: delayed board repaint (Orca)
 
-Runs as the user (needs the cmux env that Claude Code hooks inherit); the LED
-write happens as root inside duckypad_led.py. No-ops silently (exit 0) if cmux
-or the pad is absent, so it's safe to wire into hooks unconditionally.
+Runs as the user (needs the host env that Claude Code hooks inherit); the LED
+write happens as root inside duckypad_led.py. No-ops silently (exit 0) when
+neither host, nor the pad, is present — so it's safe to wire in unconditionally.
+
+Orca specifics: the firing worktree comes from $ORCA_WORKTREE_ID, and the
+key->worktree mapping lives in ~/.config/raft/board.json, because Orca's own
+Cmd-N indexes visible sidebar rows in a tree whose order its CLI does not
+expose. See docs/superpowers/specs/2026-08-18-orca-host-support-design.md.
 """
 import os
 import sys
@@ -33,11 +40,26 @@ def _log(msg):
         pass
 
 CMUX = os.environ.get("CMUX_BIN", "/Applications/cmux.app/Contents/Resources/bin/cmux")
+ORCA = os.environ.get("ORCA_BIN", "/usr/local/bin/orca")
 LED_SCRIPT = "/usr/local/libexec/duckypad_led.py"
 # Root-owned venv interpreter (pinned in /etc/sudoers.d/duckypad). Must match
 # the sudoers entry exactly. Built on the system /usr/bin/python3 (root:wheel).
 LED_PY = "/usr/local/libexec/duckypad-venv/bin/python3"
 VALID_STATES = {"working", "needs", "done", "failed", "idle", "off"}
+
+# ── Orca host: agent state → LED state ───────────────────────────────────────
+# Orca's per-pane enum, in the order we resolve conflicts. A worktree can hold
+# several agent panes; the highest-precedence one owns the key, because a pane
+# that WANTS you outranks one that is merely busy or finished.
+ORCA_PRECEDENCE = ("waiting", "blocked", "working", "done", "interrupted", "idle")
+ORCA_TO_RAFT = {
+    "waiting":     "needs",    # blue: wants you now
+    "blocked":     "failed",   # red: can't proceed
+    "working":     "working",  # amber
+    "done":        "done",     # green (fades — see orca_led_state)
+    "interrupted": "idle",     # dim purple
+    "idle":        "idle",     # dim purple
+}
 
 # The "done" green is transient: hold it, then switch the WS LED to FADE_TO so a
 # stale green doesn't linger. Implemented as a self-spawned detached fader (no
@@ -82,6 +104,137 @@ def resolve_ordinal():
     return None
 
 
+def _agent_state(agent):
+    """The precedence key for one pane. `interrupted` overrides the report."""
+    if agent.get("interrupted"):
+        return "interrupted"
+    state = (agent.get("state") or "").lower()
+    return state if state in ORCA_TO_RAFT else None
+
+
+def orca_led_state(agents, now_ms=None, fade_sec=None):
+    """Aggregate one worktree's agent panes into a single LED state.
+
+    A `done` older than the fade window resolves to "off" here rather than being
+    remembered somewhere: the mapping is a pure function of Orca's truth plus the
+    clock, so any repaint lands in the right place without bookkeeping.
+    """
+    if not agents:
+        return "off"
+    if now_ms is None:
+        now_ms = int(time.time() * 1000)
+    if fade_sec is None:
+        fade_sec = FADE_DELAY_SEC
+
+    best = None
+    for agent in agents:
+        state = _agent_state(agent)
+        if state is None:
+            continue
+        if state == "done":
+            updated = agent.get("updatedAt")
+            if isinstance(updated, int) and now_ms - updated >= fade_sec * 1000:
+                continue                      # stale green: as good as no pane
+        if best is None or ORCA_PRECEDENCE.index(state) < ORCA_PRECEDENCE.index(best):
+            best = state
+    return ORCA_TO_RAFT[best] if best else "off"
+
+
+def fade_deadline_ms(agents, fade_sec=None):
+    """Epoch ms at which the earliest live `done` in this list turns off."""
+    if fade_sec is None:
+        fade_sec = FADE_DELAY_SEC
+    stamps = [a.get("updatedAt") for a in (agents or [])
+              if _agent_state(a) == "done" and isinstance(a.get("updatedAt"), int)]
+    return min(stamps) + fade_sec * 1000 if stamps else None
+
+
+def detect(env=None, cmux_probe=None):
+    """Which host owns this session? Resolved from the FIRING session's env.
+
+    Orca is checked before cmux and short-circuits it: `cmux identify` reports a
+    caller, but a stale or fallback answer would silently light the wrong key, and
+    an Orca session is unambiguous.
+    """
+    env = os.environ if env is None else env
+    forced = (env.get("RAFT_HOST") or "").lower()
+    if forced == "off":
+        return None
+    if forced in ("orca", "cmux"):
+        return forced
+    if env.get("ORCA_WORKTREE_ID"):
+        return "orca"
+    probe = cmux_probe or resolve_ordinal
+    try:
+        if probe():
+            return "cmux"
+    except Exception:
+        pass
+    return None
+
+
+# ── Orca host: the board ─────────────────────────────────────────────────────
+# Orca's ⌘N indexes visible worktree rows in a project→repo→worktree tree, and
+# neither that order nor the collapse state is readable from its CLI, so Raft
+# owns the key→worktree mapping instead of mirroring the sidebar.
+BOARD_PATH = os.path.expanduser("~/.config/raft/board.json")
+MAX_SLOTS = 5
+
+
+def load_board(path=None):
+    """Read the Orca board. Returns [] on anything unexpected — never raises."""
+    try:
+        with open(path or BOARD_PATH) as f:
+            doc = json.load(f)
+        if (doc.get("host") or "").lower() != "orca":
+            return []                      # not ours: a stray or half-migrated file
+        slots = []
+        for entry in doc.get("slots") or []:
+            wt = entry.get("worktree")
+            if not wt:
+                continue                   # a slot with no worktree can't be lit
+            slots.append({"label": entry.get("label") or "",
+                          "worktree": wt,
+                          "query": entry.get("query") or ""})
+        return slots[:MAX_SLOTS]
+    except Exception:
+        return []
+
+
+def resolve_slot(board, worktree_id, ps_by_id):
+    """1-based ordinal for worktree_id, walking parents; None if off-board."""
+    index = {slot["worktree"]: i + 1 for i, slot in enumerate(board)}
+    seen = set()
+    current = worktree_id
+    while current and current not in seen:
+        if current in index:
+            return index[current]
+        seen.add(current)
+        current = (ps_by_id.get(current) or {}).get("parentWorktreeId")
+    return None
+
+
+def orca_board(board, ps_worktrees, firing_id=None, firing_state=None, now_ms=None):
+    """{ordinal: led_state} for every slot.
+
+    Orca's runtime may not have applied the firing session's change yet (our hook
+    and Orca's own hook are siblings on the same event), so the firing worktree's
+    state comes from the hook payload and everyone else's from `worktree ps`.
+    """
+    if not board:
+        return {}
+    ps_by_id = {w.get("worktreeId"): w for w in ps_worktrees or []}
+    result = {}
+    for ordinal, slot in enumerate(board, start=1):
+        entry = ps_by_id.get(slot["worktree"])
+        result[ordinal] = orca_led_state((entry or {}).get("agents"), now_ms=now_ms)
+    if firing_id and firing_state:
+        own = resolve_slot(board, firing_id, ps_by_id)
+        if own is not None:
+            result[own] = firing_state
+    return result
+
+
 def _tok_path(ordinal):
     return os.path.join(STATE_DIR, f"{ordinal}.tok")
 
@@ -106,15 +259,103 @@ def _read_token(ordinal):
         return None
 
 
-def _set_led(ordinal, state):
+def _set_led(ordinal, state, host=None):
     """Root LED write via the pinned NOPASSWD-sudo helper. Returns rc or None."""
+    cmd = ["sudo", "-n", LED_PY, LED_SCRIPT]
+    if host:
+        cmd += ["--host", host]
+    cmd += [str(ordinal), state]
     try:
-        r = subprocess.run(["sudo", "-n", LED_PY, LED_SCRIPT, str(ordinal), state],
-                           timeout=5, capture_output=True, text=True)
-        return r
+        return subprocess.run(cmd, timeout=5, capture_output=True, text=True)
     except Exception as e:
         _log(f"SET_LED ordinal={ordinal} state={state} EXC={e!r}")
         return None
+
+
+def orca_ps_worktrees():
+    """`orca worktree ps --json` → worktrees list. [] if Orca is unreachable."""
+    try:
+        out = subprocess.run([ORCA, "worktree", "ps", "--limit", "50", "--json"],
+                             capture_output=True, text=True, timeout=3).stdout
+        return json.loads(out)["result"]["worktrees"]
+    except Exception as e:
+        _log(f"ORCA ps failed: {e!r}")
+        return []
+
+
+def _set_board(host, board_states):
+    """One batched LED write for the whole board, via the pinned NOPASSWD sudo."""
+    args = [f"{ordinal}:{state}" for ordinal, state in sorted(board_states.items())]
+    try:
+        return subprocess.run(
+            ["sudo", "-n", LED_PY, LED_SCRIPT, "--host", host, "--board", *args],
+            timeout=5, capture_output=True, text=True)
+    except Exception as e:
+        _log(f"SET_BOARD host={host} states={board_states} EXC={e!r}")
+        return None
+
+
+def _write_outcome(result):
+    """Render a board write for the log: rc alone hides a refused write.
+
+    duckypad_led.py exits 0 when the pad's loaded profile belongs to the other
+    host, so the returncode cannot distinguish 'painted' from 'declined'. Its
+    reason goes to stderr; carry it into the log.
+    """
+    rc = getattr(result, "returncode", None)
+    err = (getattr(result, "stderr", "") or "").strip()
+    return f"sudo_rc={rc}" + (f" stderr={err!r}" if err else "")
+
+
+def _spawn_repaint(delay_sec):
+    """Detached one-shot: repaint the board once, later. No token needed —
+    a repaint is derived from Orca's truth, so a redundant one is a no-op."""
+    try:
+        subprocess.Popen(
+            [sys.executable, os.path.abspath(__file__), "--repaint-in", str(delay_sec)],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, start_new_session=True)
+    except Exception as e:
+        _log(f"REPAINT spawn EXC={e!r}")
+
+
+def run_orca(state, payload_env=None):
+    """Repaint the whole board: hook state for the firing worktree, `ps` for the rest."""
+    env = os.environ if payload_env is None else payload_env
+    board = load_board()
+    if not board:
+        _log("ORCA no board config (~/.config/raft/board.json) — nothing to paint")
+        return 0
+    firing_id = env.get("ORCA_WORKTREE_ID") or None
+    worktrees = orca_ps_worktrees()
+    now_ms = int(time.time() * 1000)
+    states = orca_board(board, worktrees, firing_id=firing_id,
+                        firing_state=state, now_ms=now_ms)
+    r = _set_board("orca", states)
+    _log(f"ORCA state={state} firing={firing_id} board={states} "
+         f"{_write_outcome(r)}")
+
+    # Schedule one repaint for the moment the earliest live green goes stale.
+    deadlines = [d for w in worktrees
+                 for d in (fade_deadline_ms(w.get("agents")),) if d]
+    if state == FADE_STATE:
+        deadlines.append(now_ms + FADE_DELAY_SEC * 1000)
+    future = [d for d in deadlines if d > now_ms]
+    if future:
+        _spawn_repaint(max(1, int((min(future) - now_ms) / 1000) + 1))
+    return 0
+
+
+def run_repaint_later(delay_sec):
+    """Sleep, then repaint from Orca's truth alone (no hook state to trust)."""
+    time.sleep(delay_sec)
+    board = load_board()
+    if not board:
+        return 0
+    states = orca_board(board, orca_ps_worktrees())
+    r = _set_board("orca", states)
+    _log(f"REPAINT board={states} {_write_outcome(r)}")
+    return 0
 
 
 def _spawn_fader(ordinal, token):
@@ -150,6 +391,16 @@ def main(argv):
                 run_fader(int(argv[1]), argv[2])
             except Exception as e:
                 _log(f"FADE EXC={e!r}")
+        return 0
+
+    # Internal self-spawned repainter (Orca): waits, then repaints the whole board
+    # from Orca's truth. Idempotent, so a redundant one costs nothing.
+    if argv and argv[0] == "--repaint-in":
+        if len(argv) >= 2:
+            try:
+                run_repaint_later(float(argv[1]))
+            except Exception as e:
+                _log(f"REPAINT EXC={e!r}")
         return 0
 
     # Read the hook payload (JSON on stdin). Needed for the Notification event to
@@ -199,6 +450,15 @@ def main(argv):
         _log(f"FIRED state={argv[0]!r} INVALID_STATE")
         return 0
 
+    host = detect()
+    if host is None:
+        _log(f"FIRED state={state} host=None — no cmux/Orca session")
+        return 0
+
+    if host == "orca":
+        return run_orca(state)
+
+    # ── cmux: unchanged single-key positional path ───────────────────────────
     ordinal = resolve_ordinal()
     if ordinal is None:
         _log(f"FIRED state={state} ordinal=None (no cmux workspace resolved)")
@@ -208,7 +468,7 @@ def main(argv):
     # for this ordinal (e.g. a new prompt cancelling a prior done's fade-to-off).
     token = _write_token(ordinal)
 
-    r = _set_led(ordinal, state)
+    r = _set_led(ordinal, state, host="cmux")
     rc, err = getattr(r, "returncode", None), getattr(r, "stderr", "") or ""
     _log(f"FIRED state={state} ordinal={ordinal} sudo_rc={rc} stderr={err.strip()!r}")
 
