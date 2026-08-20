@@ -46,6 +46,38 @@ detects cmux vs Orca from the firing session's environment. Set `RAFT_HOST` to
 `cmux`, `orca`, or `off` to override the detection (e.g. `off` in a session you
 don't want on the board).
 
+## Keep the wired hook in sync
+
+Point `~/.claude/settings.json` at `duckypad_hook.py` **inside your checkout**, so
+`git pull` updates the thing that actually runs. If you instead copy the script
+somewhere (e.g. `~/claude/duckypad_hook.py`) you must re-copy it after every
+change — and a stale copy fails *quietly*, because the hook is designed never to
+disturb your session. The symptom is subtle: hooks fire, exit 0, and log, but log
+the wrong host's path. A cmux-era copy running under Orca logs
+`ordinal=None (no cmux workspace resolved)` on every event and paints nothing,
+which is easy to mistake for "no agents running" — especially if earlier manual
+`scripts/duckypad_repaint.py` runs left plausible-looking colors on the pad.
+
+To see which version is wired:
+
+```bash
+python3 -c "
+import json, os, re
+p = os.path.expanduser('~/.claude/settings.json')
+for event, entries in json.load(open(p))['hooks'].items():
+    for e in entries:
+        for h in e.get('hooks', []):
+            m = re.search(r'(\S*duckypad_hook\.py)', h.get('command', ''))
+            if m:
+                src = open(m.group(1)).read()
+                print(f\"{event:18} {m.group(1)}  orca={'orca_board' in src}\")
+"
+```
+
+Every line should show `orca=True` if you use Orca. Also check the argument on
+each event matches `hooks/settings.snippet.json` — `StopFailure` in particular
+must pass `failed`, not `done`, or a failed turn shows green instead of red.
+
 ## Host detection and board ownership
 
 `duckypad_hook.py` resolves the host from the **firing session**, not the focused

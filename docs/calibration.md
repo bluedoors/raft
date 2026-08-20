@@ -136,6 +136,12 @@ replaced — re-merge [`../hooks/settings.snippet.json`](../hooks/settings.snipp
 Raft's entry survived 1.4.184 → 1.4.185 here, so this is a precaution, not a
 known failure.
 
+`raft=1` only proves an entry *exists*. If your settings point at a copy of
+`duckypad_hook.py` rather than the one in your checkout, that copy can be
+arbitrarily old and will fail silently — see
+[Keep the wired hook in sync](../sender/README.md#keep-the-wired-hook-in-sync)
+for the version check.
+
 While you are there, confirm Orca's `terminalShortcutPolicy` is still its
 default `orca-first`. On `terminal-first`, ⌘J is delivered to the focused
 terminal pane instead of Orca, and the entire top row stops working from inside
