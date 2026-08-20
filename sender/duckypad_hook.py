@@ -141,6 +141,68 @@ def fade_deadline_ms(agents, fade_sec=None):
     return min(stamps) + fade_sec * 1000 if stamps else None
 
 
+# ── Orca host: the board ─────────────────────────────────────────────────────
+# Orca's ⌘N indexes visible worktree rows in a project→repo→worktree tree, and
+# neither that order nor the collapse state is readable from its CLI, so Raft
+# owns the key→worktree mapping instead of mirroring the sidebar.
+BOARD_PATH = os.path.expanduser("~/.config/raft/board.json")
+MAX_SLOTS = 5
+
+
+def load_board(path=None):
+    """Read the Orca board. Returns [] on anything unexpected — never raises."""
+    try:
+        with open(path or BOARD_PATH) as f:
+            doc = json.load(f)
+        if (doc.get("host") or "").lower() != "orca":
+            return []                      # not ours: a stray or half-migrated file
+        slots = []
+        for entry in doc.get("slots") or []:
+            wt = entry.get("worktree")
+            if not wt:
+                continue                   # a slot with no worktree can't be lit
+            slots.append({"label": entry.get("label") or "",
+                          "worktree": wt,
+                          "query": entry.get("query") or ""})
+        return slots[:MAX_SLOTS]
+    except Exception:
+        return []
+
+
+def resolve_slot(board, worktree_id, ps_by_id):
+    """1-based ordinal for worktree_id, walking parents; None if off-board."""
+    index = {slot["worktree"]: i + 1 for i, slot in enumerate(board)}
+    seen = set()
+    current = worktree_id
+    while current and current not in seen:
+        if current in index:
+            return index[current]
+        seen.add(current)
+        current = (ps_by_id.get(current) or {}).get("parentWorktreeId")
+    return None
+
+
+def orca_board(board, ps_worktrees, firing_id=None, firing_state=None, now_ms=None):
+    """{ordinal: led_state} for every slot.
+
+    Orca's runtime may not have applied the firing session's change yet (our hook
+    and Orca's own hook are siblings on the same event), so the firing worktree's
+    state comes from the hook payload and everyone else's from `worktree ps`.
+    """
+    if not board:
+        return {}
+    ps_by_id = {w.get("worktreeId"): w for w in ps_worktrees or []}
+    result = {}
+    for ordinal, slot in enumerate(board, start=1):
+        entry = ps_by_id.get(slot["worktree"])
+        result[ordinal] = orca_led_state((entry or {}).get("agents"), now_ms=now_ms)
+    if firing_id and firing_state:
+        own = resolve_slot(board, firing_id, ps_by_id)
+        if own is not None:
+            result[own] = firing_state
+    return result
+
+
 def _tok_path(ordinal):
     return os.path.join(STATE_DIR, f"{ordinal}.tok")
 
