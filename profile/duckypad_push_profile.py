@@ -1,25 +1,56 @@
 #!/usr/bin/env python3
-"""Push the generated 'cmux' profile to the duckyPad over HID (file-access
-commands), the same way the Configurator does. No SD removal, no GUI.
+"""Push a generated profile to the duckyPad over HID (file-access commands), the
+same way the Configurator does. No SD removal, no GUI.
 
 CLOSE the Configurator first (it holds the HID interface). Run under sudo
 (opening the config HID needs root); needs Python 3 with the 'hidapi' package
 (pip install hidapi):
 
-  sudo python3 duckypad_push_profile.py
+  sudo python3 duckypad_push_profile.py --profile cmux
+  sudo python3 duckypad_push_profile.py --profile orca
 
-Steps: create /profile_cmux, write config.txt + key*.{txt,dsb}, append
-'<n> cmux' to /profile_info.txt (read-modify-write), then soft-reset to reload.
+Steps: create /profile_<name>, write config.txt + key*.{txt,dsb}, append
+'<n> <name>' to /profile_info.txt (read-modify-write), soft-reset to reload, then
+record <n> -> host in /usr/local/libexec/duckypad_profiles.json so the LED writer
+knows which host owns the board while that profile is loaded.
 """
 import os
 import sys
 import time
+import json
+import argparse
 import hid
 
 VID, PID, CFG_USAGE, CFG_PAGE = 0x0483, 0xD11C, 0x3A, 0x0001
 _HERE = os.path.dirname(os.path.abspath(__file__))
-LOCAL = os.path.join(_HERE, "profile_cmux")
-PROFILE_NAME = "cmux"
+
+PROFILE_MAP_PATH = "/usr/local/libexec/duckypad_profiles.json"
+
+
+def record_profile_host(number, name):
+    """Tell the LED writer which host owns which pad profile.
+
+    duckypad_led.py refuses to paint when another host's profile is loaded; this
+    is where that mapping comes from, so it is generated rather than hand-edited.
+    """
+    if name not in ("cmux", "orca"):
+        return                      # only Raft's own profiles participate
+    try:
+        try:
+            with open(PROFILE_MAP_PATH) as f:
+                mapping = json.load(f)
+        except Exception:
+            mapping = {}
+        mapping = {k: v for k, v in mapping.items() if v != name}   # drop stale entry
+        mapping[str(number)] = name
+        os.makedirs(os.path.dirname(PROFILE_MAP_PATH), exist_ok=True)
+        with open(PROFILE_MAP_PATH, "w") as f:
+            json.dump(mapping, f, indent=2)
+        os.chmod(PROFILE_MAP_PATH, 0o644)
+        print(f"recorded profile {number} -> host {name} in {PROFILE_MAP_PATH}")
+    except PermissionError:
+        print(f"WARNING: could not write {PROFILE_MAP_PATH} (need sudo). The LED "
+              f"writer will fall back to its built-in default map {{1: cmux, 2: orca}}.")
 
 # HID command numbers (firmware/evo/Inc/hid_task.h)
 C_READ_FILE = 11
@@ -92,26 +123,39 @@ def read_file(h, dev_path):
 
 
 def main():
+    ap = argparse.ArgumentParser(description="Push a generated profile to the duckyPad.")
+    ap.add_argument("--profile", default="cmux", choices=("cmux", "orca"),
+                    help="which generated profile_<name>/ directory to push")
+    args = ap.parse_args()
+    profile_name = args.profile
+    local = os.path.join(_HERE, f"profile_{profile_name}")
+    if not os.path.isdir(local):
+        print(f"no generated profile at {local} — run "
+              f"duckypad_build_profile.py --host {profile_name} first", file=sys.stderr)
+        return 2
+
     h = open_dev()
     try:
-        # 1. read current profile_info.txt, append cmux if absent
+        # 1. read profile_info.txt; reuse this profile's number or assign the next
         info = read_file(h, "/profile_info.txt")
         info_txt = info.decode("utf-8", "replace") if info else ""
         lines = [l for l in info_txt.splitlines() if l.strip()]
-        if any(l.split(maxsplit=1)[-1].strip() == PROFILE_NAME for l in lines):
-            print(f"profile '{PROFILE_NAME}' already listed; will overwrite its files")
-            nums = [int(l.split()[0]) for l in lines]
+        existing = [l for l in lines if l.split(maxsplit=1)[-1].strip() == profile_name]
+        if existing:
+            assigned = int(existing[0].split()[0])
+            print(f"profile '{profile_name}' already listed as #{assigned}; "
+                  f"overwriting its files")
         else:
-            nextnum = (max((int(l.split()[0]) for l in lines), default=0) + 1)
-            lines.append(f"{nextnum} {PROFILE_NAME}")
-            print(f"adding profile #{nextnum} {PROFILE_NAME}")
+            assigned = max((int(l.split()[0]) for l in lines), default=0) + 1
+            lines.append(f"{assigned} {profile_name}")
+            print(f"adding profile #{assigned} {profile_name}")
         new_info = ("\n".join(lines) + "\n").encode()
 
         # 2. create dir + push files
-        mkdir(h, f"/profile_{PROFILE_NAME}")
-        for fn in sorted(os.listdir(LOCAL)):
-            with open(os.path.join(LOCAL, fn), "rb") as f:
-                write_file(h, f"/profile_{PROFILE_NAME}/{fn}", f.read())
+        mkdir(h, f"/profile_{profile_name}")
+        for fn in sorted(os.listdir(local)):
+            with open(os.path.join(local, fn), "rb") as f:
+                write_file(h, f"/profile_{profile_name}/{fn}", f.read())
 
         # 3. write updated profile_info.txt
         write_file(h, "/profile_info.txt", new_info)
@@ -126,8 +170,12 @@ def main():
             h.close()
         except Exception:
             pass
-    print("DONE. Device should reboot; select the 'cmux' profile with the +/- buttons.")
+
+    record_profile_host(assigned, profile_name)
+    print(f"DONE. Device should reboot; select the '{profile_name}' profile "
+          f"with the +/- buttons.")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
