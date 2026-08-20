@@ -7,8 +7,8 @@ state of each Claude Code session. It requires the [custom firmware](../firmware
 
 | File | Role |
 |---|---|
-| `duckypad_led.py` | The low-level LED setter. Opens the duckyPad HID config interface and sends the custom `SET_LED_SINGLE` (command `0x04`) packet. Maps a workspace ordinal + state (`working`/`needs`/`done`/`off`) to a physical LED index and color. Opens/closes the device per call and **no-ops silently** if the pad is absent. |
-| `duckypad_hook.py` | The Claude Code hook bridge. Fires on session lifecycle events, resolves the firing session's own cmux workspace ordinal (via `cmux identify`), then invokes `duckypad_led.py` via `sudo -n` to set that workspace's key LED. |
+| `duckypad_led.py` | The low-level LED setter. Opens the duckyPad HID config interface and sends the custom `SET_LED_SINGLE` (command `0x04`) packet. Maps an ordinal + state (`working`/`needs`/`done`/`failed`/`idle`/`off`) to a physical LED index and color. Opens/closes the device per call and **no-ops silently** if the pad is absent. Takes one key at a time (`<ordinal> <state>`) or the whole board in one locked, batched write (`--board 1:working 2:needs …`). |
+| `duckypad_hook.py` | The Claude Code hook bridge. Fires on session lifecycle events, works out which host the firing session belongs to, resolves that session's own key, and invokes `duckypad_led.py` via `sudo -n`. On **cmux** it asks `cmux identify` for a workspace ordinal and sets that one key; on **Orca** it reads `$ORCA_WORKTREE_ID` plus `orca worktree ps` and repaints all five. Standalone and stdlib-only by design — it is copied into hook configs, not imported. |
 | `duckypad_install.sh` | One-time installer (see below). |
 
 ## Why root / NOPASSWD sudo?
@@ -41,7 +41,29 @@ The installer requires `sudo` (it reads `$SUDO_USER` for the sudoers entry and
 exits if run without sudo).
 
 To wire the hook into Claude Code, see the settings snippet at the repo root
-(`hooks/settings.snippet.json`).
+(`hooks/settings.snippet.json`). The same hook command serves both hosts — it
+detects cmux vs Orca from the firing session's environment. Set `RAFT_HOST` to
+`cmux`, `orca`, or `off` to override the detection (e.g. `off` in a session you
+don't want on the board).
+
+## Host detection and board ownership
+
+`duckypad_hook.py` resolves the host from the **firing session**, not the focused
+window: `$ORCA_WORKTREE_ID` present ⇒ Orca, else a successful `cmux identify` ⇒
+cmux, else do nothing. So with both installed, each session lights the board it
+actually belongs to.
+
+Which host may *paint* is a separate question, answered by the pad itself:
+`duckypad_led.py` reads the currently-loaded profile number over HID (`0x00`
+query-info) and compares it against `/usr/local/libexec/duckypad_profiles.json`,
+written by `profile/duckypad_push_profile.py`. A `--board` write from a host that
+doesn't own the loaded profile is refused, so a cmux session cannot repaint an
+Orca board. Unknown profiles are allowed — fail-open, so a hand-made profile
+can't lock you out. `--index` and `--all-off` bypass the gate deliberately, since
+they're calibration and cleanup tools.
+
+Because the sudoers rule pins the *interpreter and script path* (not the
+arguments), `--board` and `--host` need no installer or sudoers change.
 
 ## LED index calibration
 
