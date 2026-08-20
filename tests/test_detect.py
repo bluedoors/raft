@@ -1,5 +1,6 @@
 import unittest
 
+import context  # noqa: F401  — puts sender/ on sys.path; must precede the import below
 import duckypad_hook as h
 
 
