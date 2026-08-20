@@ -174,6 +174,19 @@ def main():
     record_profile_host(assigned, profile_name)
     print(f"DONE. Device should reboot; select the '{profile_name}' profile "
           f"with the +/- buttons.")
+    # The soft reset above can leave the pad powered but NOT re-enumerated: keys,
+    # LEDs and OLED look fine while the host sees no device, so every LED write
+    # silently no-ops. Cheap to check, maddening to diagnose blind.
+    try:
+        found = len(hid.enumerate(VID, PID))
+    except Exception:
+        found = 0
+    if found:
+        print(f"USB re-enumerated OK ({found} interfaces).")
+    else:
+        print("WARNING: the pad is not on the USB bus after the reset. LEDs and "
+              "OLED will still work, but LED writes from the host will silently "
+              "do nothing. REPLUG the USB cable.")
     return 0
 
 

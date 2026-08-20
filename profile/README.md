@@ -53,6 +53,26 @@ sudo python3 duckypad_push_profile.py --profile orca
 
 After each push the pad reboots; select the profile with the +/- buttons.
 
+> **If LEDs stop responding after a push, replug the USB cable.** The push ends
+> with a soft reset (`C_SW_RESET`) so the pad reloads its profiles, and that
+> reset can bring the device back **powered but not re-enumerated**: keys, LEDs
+> and OLED all look normal, while the host no longer sees the pad on the USB bus
+> at all. Every LED write then becomes a silent no-op, because the writer treats
+> an absent pad as "nothing to do" rather than an error. Measured on this
+> hardware: `hid.enumerate()` listed 30 devices and *zero* from STMicro
+> (`0x0483`) while the pad sat there lit, showing its profile name. A physical
+> replug restores all five interfaces including the config one (`usage=0x3A`).
+>
+> To tell this state apart from a working pad — both are silent — check
+> enumeration directly:
+>
+> ```bash
+> /usr/local/libexec/duckypad-venv/bin/python3 -c \
+>   "import hid; print(len(hid.enumerate(0x0483, 0xD11C)), 'interfaces')"
+> ```
+>
+> Expect `5 interfaces`. `0` means replug.
+
 `--profile` reuses that name's existing slot in `/profile_info.txt` if it is
 already listed, so re-pushing overwrites in place rather than piling up
 duplicates.
