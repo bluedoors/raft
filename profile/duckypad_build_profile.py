@@ -67,8 +67,16 @@ HOST_KEYS = {
 
 TOP_ROW = [3, 6, 9, 12, 15]          # physical keys, left→right in landscape
 TOP_ROW_COLOR = (25, 25, 25)         # hooks override this live
-PALETTE_OPEN_DELAY_MS = 150          # ⌘J → palette focused
-PALETTE_FILTER_DELAY_MS = 400        # > the palette's ~300ms debounce (spec probe 10)
+# ⌘J → palette focused. MEASURED ON HARDWARE 2026-08-20: 150ms is far too short
+# for a COLD open (the first jump after the app has been idle). When the palette
+# is not yet focused, STRING types into whatever pane has focus — it leaked "raf"
+# into a live agent's prompt — and the trailing ENTER would then SUBMIT that text
+# as a prompt. Warm opens were fine at 150ms, which is exactly what makes a small
+# value dangerous: it works until it doesn't. 500ms costs nothing perceptible.
+PALETTE_OPEN_DELAY_MS = 500
+PALETTE_FILTER_DELAY_MS = 400        # > the palette's ~300ms debounce; verified on
+                                     # hardware with a 34-character query
+
 MAX_LABEL = 7
 
 

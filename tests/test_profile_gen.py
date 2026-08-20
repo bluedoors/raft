@@ -33,6 +33,16 @@ class TestTopRow(unittest.TestCase):
         self.assertEqual(lines[4], "ENTER")
         self.assertGreaterEqual(int(lines[3].split()[1]), 300)
 
+    def test_open_delay_is_generous_enough_for_a_cold_palette(self):
+        """Regression guard for a measured failure, not a style preference.
+
+        At 150ms a cold ⌘J had not focused the palette yet, so STRING typed into a
+        live agent's prompt and ENTER would have submitted it. Anything under
+        ~400ms reintroduces that.
+        """
+        lines = [l.strip() for l in gen.top_row_keys("orca", SLOTS)[3][1].splitlines()]
+        self.assertGreaterEqual(int(lines[1].split()[1]), 400)
+
     def test_no_enter_variant_omits_enter(self):
         keys = gen.top_row_keys("orca", SLOTS, send_enter=False)
         self.assertNotIn("ENTER", keys[3][1])
