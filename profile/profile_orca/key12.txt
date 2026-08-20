@@ -1,0 +1,5 @@
+GUI j
+DELAY 150
+STRING sa-assist
+DELAY 400
+ENTER
