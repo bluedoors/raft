@@ -295,6 +295,18 @@ def _set_board(host, board_states):
         return None
 
 
+def _write_outcome(result):
+    """Render a board write for the log: rc alone hides a refused write.
+
+    duckypad_led.py exits 0 when the pad's loaded profile belongs to the other
+    host, so the returncode cannot distinguish 'painted' from 'declined'. Its
+    reason goes to stderr; carry it into the log.
+    """
+    rc = getattr(result, "returncode", None)
+    err = (getattr(result, "stderr", "") or "").strip()
+    return f"sudo_rc={rc}" + (f" stderr={err!r}" if err else "")
+
+
 def _spawn_repaint(delay_sec):
     """Detached one-shot: repaint the board once, later. No token needed —
     a repaint is derived from Orca's truth, so a redundant one is a no-op."""
@@ -321,7 +333,7 @@ def run_orca(state, payload_env=None):
                         firing_state=state, now_ms=now_ms)
     r = _set_board("orca", states)
     _log(f"ORCA state={state} firing={firing_id} board={states} "
-         f"sudo_rc={getattr(r, 'returncode', None)}")
+         f"{_write_outcome(r)}")
 
     # Schedule one repaint for the moment the earliest live green goes stale.
     deadlines = [d for w in worktrees
@@ -342,7 +354,7 @@ def run_repaint_later(delay_sec):
         return 0
     states = orca_board(board, orca_ps_worktrees())
     r = _set_board("orca", states)
-    _log(f"REPAINT board={states} sudo_rc={getattr(r, 'returncode', None)}")
+    _log(f"REPAINT board={states} {_write_outcome(r)}")
     return 0
 
 

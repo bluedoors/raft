@@ -231,7 +231,14 @@ def main(argv):
     try:
         if host is not None:
             current = _query_current_profile(h)
-            if not host_owns_board(host, current, load_profile_host_map()):
+            profile_map = load_profile_host_map()
+            if not host_owns_board(host, current, profile_map):
+                # Say so. A silent refusal is indistinguishable from a successful
+                # write at the call site, and "nothing lit" is also what every
+                # real bug looks like — this line is the difference between
+                # diagnosing in seconds and bisecting the whole chain.
+                print(f"refusing {host} board write: pad profile {current} "
+                      f"belongs to {profile_map.get(current)}", file=sys.stderr)
                 return 0              # another host owns the board: write nothing
         for idx, r, g, b in actions:
             _set_led(h, idx, r, g, b)

@@ -75,6 +75,62 @@ class TestMainGating(unittest.TestCase):
     def test_no_args_is_silent_success(self):
         self.assertEqual(led.main([]), 0)
 
+    def test_refusal_says_why_on_stderr(self):
+        """A refused write must be distinguishable from a successful one.
+
+        Both exit 0 and leave the pad unchanged, so without this line "nothing
+        lit" is ambiguous between the gate doing its job and any real bug in the
+        chain. Cost us two false diagnoses during hardware testing.
+        """
+        import io
+        import contextlib
+
+        class FakeDev:
+            def close(self): pass
+
+        painted = []
+        for name, stub in (("_open_device", lambda: FakeDev()),
+                           ("_query_current_profile", lambda h: 8),
+                           ("load_profile_host_map", lambda path=None: {8: "orca"}),
+                           ("_set_led", lambda *a: painted.append(a))):
+            original = getattr(led, name)
+            setattr(led, name, stub)
+            self.addCleanup(setattr, led, name, original)
+
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            rc = led.main(["--host", "cmux", "--board", "1:working"])
+
+        self.assertEqual(rc, 0)                     # never disturb the session
+        self.assertEqual(painted, [])               # and never touch the LEDs
+        self.assertIn("refusing cmux", err.getvalue())
+        self.assertIn("orca", err.getvalue())       # names the owner
+
+    def test_permitted_write_is_quiet(self):
+        """Only refusals talk, or the hook log fills with noise on every event."""
+        import io
+        import contextlib
+
+        class FakeDev:
+            def close(self): pass
+
+        painted = []
+        for name, stub in (("_open_device", lambda: FakeDev()),
+                           ("_query_current_profile", lambda h: 8),
+                           ("load_profile_host_map", lambda path=None: {8: "orca"}),
+                           ("_set_led", lambda *a: painted.append(a))):
+            original = getattr(led, name)
+            setattr(led, name, stub)
+            self.addCleanup(setattr, led, name, original)
+
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            rc = led.main(["--host", "orca", "--board", "1:working"])
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(len(painted), 1)
+        self.assertEqual(err.getvalue(), "")
+
 
 if __name__ == "__main__":
     unittest.main()
