@@ -78,37 +78,58 @@ position of each LED index changes and you must remap.
 
 ---
 
-## Orca palette-macro timing
+## Orca row order — the one setting Raft needs
 
-The LED map is hardware calibration; the Orca top row needs *timing*
-calibration, for the same reason — it depends on your machine, not on the
-protocol. Each top-row key opens the ⌘J palette, types a query, waits for the
-filter to settle, then presses ⏎. The two delays live in
-`profile/duckypad_build_profile.py`.
+The LED map is hardware calibration. Orca needs one setting instead, because the
+top row addresses worktrees by **position**: `⌘1`–`⌘5` select the Nth worktree row
+in the sidebar.
 
-**Values verified on this hardware (2020 duckyPad, macOS, Orca 1.4.185):**
+**Set the worktree sidebar sort to `Manual`.** Orca's full set of modes, read out
+of its bundle:
 
-| Constant | Value | What it waits for |
+| Mode | Sorts by | Stable for Raft? |
 |---|---|---|
-| `PALETTE_OPEN_DELAY_MS` | **500** | ⌘J to actually focus the palette, *cold* |
-| `PALETTE_FILTER_DELAY_MS` | **400** | the palette's ~300 ms filter debounce |
+| `smart` (default) | agent-state class → attention → activity → name | **No** — rows move as agents work |
+| `recent` | last activity → name | No |
+| `name` | alphabetical | Yes, until you rename or add |
+| `repo` | repo name → name | Yes, same caveat |
+| `manual` | `manualOrder ?? sortOrder` → name | **Yes — use this** |
 
-`PALETTE_OPEN_DELAY_MS` started at 150 and had to be raised. A warm ⌘J opens in
-far less than 150 ms, so the low value passed every test until the first cold
-open — the palette had not taken focus yet, `STRING` typed into the focused
-agent pane instead (visibly leaking `raf` into a live prompt), and only the
-trailing `t` reached the palette, which then selected the top match for `t`. If
-the palette had not opened at all, the trailing `ENTER` would have *submitted*
-the leaked text as a prompt. Don't tune this one down; a regression test asserts
-it stays ≥400.
+On `smart`, key 3 stops meaning what it meant a minute ago, because a worktree
+that needs attention is promoted. On `manual`, order is what you dragged and
+agent state is ignored entirely.
 
-`PALETTE_FILTER_DELAY_MS` was verified with a 34-character query. **Symptoms
-that it is too low:** a key lands on the worktree the *previous* query matched,
-or the palette is left open. Raise by 200, regenerate, re-push, and record your
-value here.
+Then tell Raft which worktree each row holds, by reading your own sidebar top to
+bottom:
 
-Re-check both after an Orca upgrade — they are timings against someone else's
-UI.
+```bash
+python3 scripts/raft_board_init.py --list          # what exists
+python3 scripts/raft_board_init.py --rows raft radar billing-api
+python3 scripts/raft_board_verify.py               # every row still alive?
+```
+
+This costs no profile rebuild and no push — the pad's keys are fixed keystrokes.
+
+**Do not try to derive the row order from Orca's own files.** We tried, three
+times, and got it wrong each time: `orca worktree list --json` and `worktree ps`
+each return their own unrelated order, and the persisted fields (`projectGroups[].tabOrder`,
+`repos[].projectGroupOrder`, `worktreeMeta[].manualOrder`) did not reproduce the
+observed rows. If you need ground truth, measure it instead — press `⌘1`…`⌘n` and
+read the visit timestamps Orca writes:
+
+```bash
+python3 -c "
+import json, os
+p = os.path.expanduser('~/Library/Application Support/Orca/profiles/local-default/orca-data.json')
+v = json.load(open(p))['workspaceSession']['lastVisitedAtByWorktreeId']
+for wid, ts in sorted(v.items(), key=lambda kv: kv[1])[-9:]:
+    print(ts, wid.split('::')[-1])
+"
+```
+
+The last N lines, in order, are the rows you just pressed. That trick is how the
+row order in this doc was established, and it survives any change to Orca's
+internal sorting because it observes the result rather than modelling the cause.
 
 ## After an Orca upgrade
 

@@ -1,22 +1,24 @@
 #!/usr/bin/env python3
-"""Board query matching for Raft's Orca host.
+"""Board helpers for Raft's Orca host.
 
-Orca's ⌘J palette CREATES a worktree when a query matches nothing, so every
-board query must provably match exactly one existing worktree. The matcher here
-approximates Orca's (case-insensitive substring over worktree name, branch, and
-repo); it is deliberately more conservative than Orca's fuzzy ranking, which is
-why `raft_board_verify.py` exists rather than the generator being trusted.
+The board maps LED row -> worktreeId. Jumping is positional (⌘1–⌘5, resolved by
+Orca), so nothing here affects where a key sends you; these helpers only decide
+which worktree each LED reports on. `matches` exists so you can name a worktree
+by substring instead of pasting a composite id, and `check_board` catches the one
+failure that still matters: a row pointing at a worktree that no longer exists,
+which would silently show a dark or wrong-coloured key.
 """
 import json
 import os
 import subprocess
 
 MAX_LABEL = 7
+MAX_SLOTS = 5
 ORCA_DEFAULT = os.environ.get("ORCA_BIN", "/usr/local/bin/orca")
 
 
 def haystacks(worktree):
-    """Lowercased strings the palette matches this worktree on."""
+    """Lowercased strings a selector may match this worktree on."""
     branch = (worktree.get("branch") or "").replace("refs/heads/", "")
     fields = (worktree.get("displayName"), branch, worktree.get("repo"))
     return [f.lower() for f in fields if f]
@@ -31,49 +33,25 @@ def matches(query, worktrees):
             if any(q in hay for hay in haystacks(w))]
 
 
-def suggest_query(worktree, worktrees):
-    """Shortest candidate matching only this worktree, or None if impossible."""
-    candidates = sorted(set(haystacks(worktree)), key=len)
-    for cand in candidates:
-        if matches(cand, worktrees) == [worktree["worktreeId"]]:
-            return cand
-    # Fall back to a compound query: repo plus name usually disambiguates twins.
-    branch = (worktree.get("branch") or "").replace("refs/heads/", "")
-    for cand in (f"{worktree.get('repo') or ''} {branch}".strip(),):
-        if cand and matches(cand, worktrees) == [worktree["worktreeId"]]:
-            return cand
-    return None
-
-
 def check_board(slots, worktrees):
-    """Human-readable problems with this board. [] means safe to push."""
+    """Human-readable problems with this board. [] means every LED is truthful.
+
+    Deliberately short now. The old version also had to prove each query matched
+    exactly one worktree, because a stale query made Orca CREATE one; positional
+    jumping removed that whole class of problem.
+    """
     problems = []
     by_id = {w["worktreeId"]: w for w in worktrees}
     for i, slot in enumerate(slots, start=1):
         label = slot.get("label") or ""
         wid = slot.get("worktree")
-        query = slot.get("query") or ""
         if len(label) > MAX_LABEL:
             problems.append(
-                f"slot {i} ({label!r}): label exceeds {MAX_LABEL} characters")
+                f"row {i} ({label!r}): label exceeds {MAX_LABEL} characters")
         if wid not in by_id:
             problems.append(
-                f"slot {i} ({label!r}): worktree {wid!r} no longer exists — its LED "
-                f"will stay off")
-        hits = matches(query, worktrees)
-        if not hits:
-            problems.append(
-                f"slot {i} ({label!r}): query {query!r} matches nothing — pressing "
-                f"this key would CREATE a worktree named {query!r}")
-        elif len(hits) > 1:
-            names = ", ".join(sorted(by_id[h].get("repo") or h for h in hits))
-            problems.append(
-                f"slot {i} ({label!r}): query {query!r} is ambiguous — matches "
-                f"{len(hits)} worktrees ({names})")
-        elif wid in by_id and hits[0] != wid:
-            problems.append(
-                f"slot {i} ({label!r}): query {query!r} selects the wrong worktree "
-                f"({by_id[hits[0]].get('repo')} instead of {by_id[wid].get('repo')})")
+                f"row {i} ({label!r}): worktree {wid!r} no longer exists — this key's "
+                f"LED will stay off while ⌘{i} still jumps somewhere")
     return problems
 
 

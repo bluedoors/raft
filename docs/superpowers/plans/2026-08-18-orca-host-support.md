@@ -127,7 +127,7 @@ Expected: prints two "wrote …" lines and a worktree count ≥ 1.
 
 Then grep to prove nothing private survived:
 
-Run: `grep -ric "awsbryn\|bluedoors\|anthropic" tests/fixtures/ || echo CLEAN`
+Run: `grep -ric "$(whoami)\|your-org\|your-repos" tests/fixtures/ || echo CLEAN`
 Expected: `CLEAN`. If not, add the leaking key to `DROP_KEYS` or `MAP_KEYS` and re-run.
 
 - [ ] **Step 3: Hand-edit the ps fixture to cover the cases the live machine lacks**

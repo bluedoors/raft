@@ -29,7 +29,7 @@ addressing, so they are recorded here rather than summarised.
    firing session is a direct key match — no `cmux identify` equivalent needed.
 2. **`⌘1`–`⌘9` (`workspace.selectByIndex`) indexes visible *worktree rows* in the sidebar's
    project → repo → worktree tree.** Pressing `⌘2` selected the worktree whose breadcrumb is
-   `Territory-Management → sa-assist → main`, which is the second *worktree* row in the tree, and
+   `Reporting → billing-api → main`, which is the second *worktree* row in the tree, and
    is row 6 of `worktree list` (and row 5 by most-recent-activity). Collapsed repos contribute no
    rows, so the index also depends on expand/collapse state. **Neither the tree order nor the
    collapse state is exposed by the CLI**, so the index is not reproducible from data Raft can
@@ -66,7 +66,7 @@ addressing, so they are recorded here rather than summarised.
       `Create worktree "orca-host"` is present but **last and unselected**. Footer: `Enter → Open`.
       The query matched a substring of a longer display name, which is what the generator relies on.
     - **Ambiguous query** (`main`): five worktree rows, identical names, distinguished only by a
-      repo badge; the highlighted row was `sa-assist`, an order matching neither the sidebar nor
+      repo badge; the highlighted row was `billing-api`, an order matching neither the sidebar nor
       alphabetical — the matcher's own ranking. Unpredictable, hence build-time uniqueness.
     - **No-match query** (`zzqq`): exactly one row, `Create worktree "zzqq"`, **highlighted**.
       Hazard confirmed, not theoretical.
@@ -137,7 +137,7 @@ its own five-slot board: `~/.config/raft/board.json`.
 {
   "host": "orca",
   "slots": [
-    {"label": "raft",   "worktree": "…::/Users/awsbryn/code/bluedoors/raft", "query": "orca-host-support"},
+    {"label": "raft",   "worktree": "…::/Users/you/code/bluedoors/raft", "query": "orca-host-support"},
     {"label": "gateway","worktree": "…::/Users/…/anthropic-on-aws-vpc-reuse", "query": "vpc-reuse"}
   ]
 }
@@ -359,3 +359,65 @@ table, Orca setup (define your board, push `profile_orca`), and the honest state
 addressing is name-based because its sidebar index is neither positional nor readable. New
 caveats: leave `terminalShortcutPolicy` on `orca-first`; re-run `raft_board_verify.py` after
 renaming branches. The cmux `reorderOnNotification` caveat stays, scoped to cmux.
+
+---
+
+## Revision, 2026-08-21: positional addressing replaces typed queries
+
+The original design addressed Orca worktrees **by name**, typing a
+uniqueness-checked query into the `⌘J` palette, on the stated grounds that
+`⌘1`–`⌘9` "indexes visible worktree rows in a tree whose order and collapse
+state its CLI does not expose". That premise was half wrong, and the design has
+changed accordingly.
+
+**What was wrong.** The order is not exposed by the CLI, but it *is* stable —
+provided Orca's worktree sidebar sort is set to `Manual`. Reading the app bundle
+turned up the full comparator set (`smart`, `recent`, `name`, `repo`, `manual`);
+the default `smart` re-ranks rows by agent-state class and attention timestamp,
+which is what produced the "unprompted renumbering" recorded in the probe log.
+It was Orca deliberately re-sorting, not churn. `manual` keys off a dragged order
+and ignores agent state.
+
+**What positional addressing buys.** `⌘1`–`⌘5`, one keystroke each, in place of
+`⌘J` + 500 ms + typed query + 400 ms + `⏎`. It retires, entirely:
+
+- the ~900 ms per-press latency;
+- the cold-open prompt-injection hazard (keystrokes arriving before the palette
+  took focus, typing into a live agent's prompt);
+- the **create hazard** — the palette's "create a worktree" row being selectable
+  by the macro's `⏎` when a query went stale. This was not theoretical: two of
+  five slots went stale within a day of being configured;
+- query generation, uniqueness enforcement, `suggest_query`, and the ambiguity
+  and wrong-worktree checks in `check_board`;
+- profile re-pushes on any board change — the top row is now a constant, so the
+  profile is generated and pushed once and never again.
+
+**What it costs.**
+
+- Orca's sidebar sort must be `Manual`; on any other mode the rows move and a key
+  silently changes meaning.
+- Only rows 1–9 are addressable and only 1–5 have keys. A worktree below row 9
+  cannot be reached by any keystroke; the `Jump` key (`⌘J`) remains the escape
+  hatch. A collapsed group's worktrees are not rows and shift the count.
+- Rearranging Orca desynchronises the LEDs (not the keys) until
+  `raft_board_init.py --rows …` is re-run. `raft_board_verify.py` catches a row
+  pointing at a deleted worktree; it cannot detect a silent swap between two
+  live ones.
+- Key labels become `1`–`5`. A project name baked into the pad would go stale on
+  the next rearrangement, so the pad no longer says which project a key is.
+
+**Do not attempt to compute the row order from Orca's persisted state.** Three
+attempts failed: `worktree list --json` and `worktree ps --json` each return
+their own unrelated order, and the persisted ordering fields
+(`projectGroups[].tabOrder`, `repos[].projectGroupOrder`,
+`worktreeMeta[].manualOrder`, `ui.collapsedGroups`) did not reproduce the
+observed rows in any combination tried. The board is therefore **declared by the
+user**, who can simply read their own sidebar. Where ground truth is needed,
+measure rather than model: press `⌘1`…`⌘n` and read
+`workspaceSession.lastVisitedAtByWorktreeId` from `orca-data.json`, whose
+timestamps recover the order pressed. That technique established every row
+mapping recorded here and is immune to future changes in Orca's sorting.
+
+**Unchanged by this revision:** the hook, the state precedence, the fade, the
+batched LED write, the `flock`, and the profile-based ownership gate. `load_board`
+already treated `query` as optional, so the status path needed no edit at all.

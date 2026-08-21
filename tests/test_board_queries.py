@@ -40,53 +40,40 @@ class TestMatches(unittest.TestCase):
         self.assertEqual(rb.matches("", WORKTREES), [])
 
 
-class TestSuggestQuery(unittest.TestCase):
-    def test_suggests_a_unique_query(self):
-        query = rb.suggest_query(WORKTREES[0], WORKTREES)
-        self.assertEqual(rb.matches(query, WORKTREES), ["id-raft"])
-
-    def test_returns_none_when_nothing_distinguishes(self):
-        twins = [wt("a", "main", "refs/heads/main", "same"),
-                 wt("b", "main", "refs/heads/main", "same")]
-        self.assertIsNone(rb.suggest_query(twins[0], twins))
-
-    def test_distinguishes_same_named_worktrees_by_repo(self):
-        query = rb.suggest_query(WORKTREES[1], WORKTREES)
-        self.assertEqual(rb.matches(query, WORKTREES), ["id-main1"])
-
-
 class TestCheckBoard(unittest.TestCase):
+    """check_board only guards LED truthfulness now — jumping is Orca's job."""
+
     def test_good_board_has_no_problems(self):
-        slots = [{"label": "raft", "worktree": "id-raft", "query": "orca-host"}]
+        slots = [{"label": "1", "worktree": "id-raft"}]
         self.assertEqual(rb.check_board(slots, WORKTREES), [])
 
-    def test_ambiguous_query_is_a_problem(self):
-        slots = [{"label": "r", "worktree": "id-main1", "query": "main"}]
-        problems = rb.check_board(slots, WORKTREES)
-        self.assertEqual(len(problems), 1)
-        self.assertIn("ambiguous", problems[0].lower())
-
-    def test_no_match_query_is_a_problem_naming_the_create_hazard(self):
-        slots = [{"label": "r", "worktree": "id-raft", "query": "zzqq"}]
-        problems = rb.check_board(slots, WORKTREES)
-        self.assertEqual(len(problems), 1)
-        self.assertIn("create", problems[0].lower())
-
-    def test_query_matching_the_wrong_worktree_is_a_problem(self):
-        slots = [{"label": "r", "worktree": "id-raft", "query": "vpc-reuse"}]
-        problems = rb.check_board(slots, WORKTREES)
-        self.assertEqual(len(problems), 1)
-        self.assertIn("wrong worktree", problems[0].lower())
-
     def test_missing_worktree_is_a_problem(self):
-        slots = [{"label": "r", "worktree": "id-gone", "query": "orca-host"}]
+        slots = [{"label": "1", "worktree": "id-gone"}]
         problems = rb.check_board(slots, WORKTREES)
         self.assertTrue(any("no longer exists" in p.lower() for p in problems))
 
+    def test_missing_worktree_says_the_key_still_jumps(self):
+        """The failure is a lying LED, not a broken key — say so, or the user
+        goes looking for a jump bug that doesn't exist."""
+        problems = rb.check_board([{"label": "3", "worktree": "id-gone"}], WORKTREES)
+        self.assertIn("jumps", problems[0].lower())
+
     def test_overlong_label_is_a_problem(self):
-        slots = [{"label": "waytoolong", "worktree": "id-raft", "query": "orca-host"}]
+        slots = [{"label": "waytoolong", "worktree": "id-raft"}]
         problems = rb.check_board(slots, WORKTREES)
         self.assertTrue(any("7 characters" in p for p in problems))
+
+    def test_a_board_without_queries_is_valid(self):
+        """Queries are gone. A board carrying none must not be faulted for it."""
+        slots = [{"label": str(i), "worktree": w} for i, w in
+                 enumerate(["id-raft", "id-main1", "id-vpc"], start=1)]
+        self.assertEqual(rb.check_board(slots, WORKTREES), [])
+
+    def test_ambiguity_is_no_longer_a_problem(self):
+        """Two rows may watch worktrees that share a name; only ids matter."""
+        slots = [{"label": "1", "worktree": "id-main1"},
+                 {"label": "2", "worktree": "id-main2"}]
+        self.assertEqual(rb.check_board(slots, WORKTREES), [])
 
 
 if __name__ == "__main__":

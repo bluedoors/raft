@@ -39,10 +39,10 @@ Two independent channels, exactly like the Codex Micro's frosted status keys:
                                                        (repaints all five keys)
 
         └───────────────────────────── outbound (control) ─────────────────────────────┘
- duckyPad key ── USB HID keystroke ──> cmux (⌘1–5 jump) / Orca (⌘J + type a query + ⏎) / Claude Code (Esc, /clear, …)
+ duckyPad key ── USB HID keystroke ──> cmux (⌘1–5 jump) / Orca (⌘1–5 jump) / Claude Code (Esc, /clear, …)
 ```
 
-- **Outbound** is just a normal USB-HID keyboard profile — no special software. On cmux the top row sends `⌘1`–`⌘5` to jump workspaces; on Orca it opens the ⌘J switch palette, types that slot's saved query, and presses ⏎. Other keys send Claude Code / host shortcuts.
+- **Outbound** is just a normal USB-HID keyboard profile — no special software. The top row sends `⌘1`–`⌘5` on **both** hosts: cmux reads that as workspace N, Orca as the Nth worktree row in its sidebar. Other keys send Claude Code / host shortcuts.
 - **Inbound, cmux**: the hook resolves *which workspace the firing session belongs to* via `cmux identify` (not the focused one — a background agent finishing still lights its own key) and sets that one key.
 - **Inbound, Orca**: `worktree ps` is the source of truth, and the hook is only a trigger. On each event Raft reads every worktree's agent state and repaints **all five** keys in one batched write, so keys track agents Raft never saw start — including Codex or Gemini panes, which never fire a Claude hook. The firing session's own state comes from the hook payload rather than `ps`, because Orca installs a sibling hook on the same events and its own state write may not have landed yet.
 - Either way, opening the HID interface needs root on macOS, so the LED writer runs behind a locked-down NOPASSWD-sudo helper. Each call opens/closes the device (no daemon, no persistent handle), and no-ops silently when the pad is unplugged.
@@ -86,27 +86,29 @@ The top row is the heart of it: each key both **shows** a workspace's agent stat
 
 ## Key layout — the `orca` profile
 
-The bottom row (Claude Code actions) and `New WS` / `Rewind` / `Intrpt` are identical. Three keys differ, because Orca cannot be addressed positionally:
+Identical to the cmux profile except for two middle-row keys, because the top row is now positional on both hosts:
 
 | Key | Sends | Does | LED |
 |---|---|---|---|
-| **top row** | `⌘J`, then types the slot's query, then ⏎ | Switch to the worktree that query uniquely matches | **live agent status**, same colors, plus dim purple = idle |
+| **1–5** (top row) | `⌘1`–`⌘5` | Switch to the Nth worktree row in Orca's sidebar | **live agent status**, same colors, plus dim purple = idle |
 | Jump (was Unread) | `⌘J` | Open the switch palette and leave it open — Orca has no jump-to-unread | static |
 | Next WT (was Next WS) | `⌘⇧↓` | Next worktree | static |
 
-Top-row **labels come from your board**, not from the code: each key is named after the worktree you assigned to it, truncated to the pad's 7-character limit. Unassigned slots are inert and unlabelled (`--`).
+**Set Orca's worktree sidebar sort to Manual.** Its default (`smart`) re-sorts by agent state and attention, so rows shuffle while you work and the pad's key 3 stops meaning what it meant a minute ago. Manual sort keys off the order you dragged and ignores agent state entirely. This is the one Orca setting Raft needs.
 
-The board is five lines of JSON at `~/.config/raft/board.json` — Raft's own ordering, deliberately not Orca's:
+The keys are labelled `1`–`5` rather than by project, deliberately: which worktree a row holds is decided in Orca's sidebar, so a name baked into the pad would go stale the moment you rearrange. Rearranging now costs nothing — no regeneration, no `sudo`, no re-push.
+
+The LEDs still need to know which worktree each row holds, and that lives in `~/.config/raft/board.json`:
 
 ```json
 { "host": "orca",
-  "slots": [ { "label": "raft",   "worktree": "<worktreeId>", "query": "raft" },
-             { "label": "gateway","worktree": "<worktreeId>", "query": "fix/vpc-reuse" } ] }
+  "slots": [ { "label": "1", "worktree": "<worktreeId>" },
+             { "label": "2", "worktree": "<worktreeId>" } ] }
 ```
 
-`query` is what the pad types into the palette; `worktree` is the composite id that `orca worktree ps --json` reports, which is how the LED for that slot is resolved. Generate the file with [`scripts/raft_board_init.py`](scripts/raft_board_init.py) rather than hand-writing ids.
+Write it with [`scripts/raft_board_init.py`](scripts/raft_board_init.py) by reading your sidebar top to bottom — `--rows raft radar billing-api` — rather than hand-writing composite ids.
 
-> **Why type a name instead of pressing ⌘2?** Orca's `⌘1`–`⌘9` select the *n*-th visible row of a project→repo→worktree tree, so the target depends on scroll position, which groups are collapsed, and an internal `sortOrder` that Orca renumbers on its own (observed twice in half an hour, unprompted). A name-addressed board is stable across all of that; a positional one silently drifts.
+> **Why positional, when Orca has no per-worktree shortcut?** Orca offers only `⌘1`–`⌘9` (Nth row), `⌘⇧↑/↓` (neighbour), `⌘⌥←` (history back) and `⌘J` (palette) — nothing that names a worktree. Raft originally typed a uniqueness-checked query into `⌘J`, because Orca's row order looked unknowable. With Manual sort it's stable, and "go to row 3" is true by construction: it can't mistarget, can't be ambiguous, and can't create a worktree. See [Known limitations](#known-limitations) for what it costs.
 
 ---
 
@@ -140,11 +142,12 @@ Four stages — each directory has its own README with exact commands.
 Orca has no stable positional addressing, so you tell Raft which five worktrees the top row owns. This is the only host-specific setup.
 
 ```bash
-# 1. see what Orca currently has, with a suggested unique query per worktree
+# 1. set Orca's worktree sidebar sort to Manual, then drag the five you care
+#    about into the top five rows. See what Orca currently has:
 python3 scripts/raft_board_init.py --list
 
-# 2. write ~/.config/raft/board.json (up to 5 selectors, left→right)
-python3 scripts/raft_board_init.py --slots raft fix/vpc-reuse sa-assist radar
+# 2. tell Raft which worktree each row holds, reading your sidebar top to bottom
+python3 scripts/raft_board_init.py --rows raft radar billing-api
 
 # 3. generate + push the Orca profile (labels and macros come from the board)
 RAFT_CONFIG_SRC=/path/to/duckyPad-Configurator/src \
@@ -155,7 +158,7 @@ sudo python3 profile/duckypad_push_profile.py --profile orca
 python3 scripts/duckypad_repaint.py
 ```
 
-`raft_board_init.py` **refuses** any selector that matches more than one worktree, because an ambiguous query is not merely imprecise — see the create hazard below. Re-run [`scripts/raft_board_verify.py`](scripts/raft_board_verify.py) whenever you rename a branch or reshape the board; it exits non-zero and names the problem. Editing `board.json` by hand is fine (the `label` in particular — it is only cosmetic), but rebuild and re-push the profile afterwards so the pad's macros match.
+`raft_board_init.py` refuses a selector matching more than one worktree — a wrong LED is a lie, even though a wrong *jump* is no longer possible. Re-run [`scripts/raft_board_verify.py`](scripts/raft_board_verify.py) after deleting a worktree or rearranging; it exits non-zero and names the row. **Steps 3 and 4 are one-time** — the pad's top row is five fixed keystrokes, so rearranging your board afterwards means re-running step 2 only: no regeneration, no `sudo`, no re-push.
 
 ---
 
@@ -181,10 +184,10 @@ docs/       calibration, teardown, superpowers/ (design + implementation plan)
 - **One key, several panes: the loudest state wins.** An Orca worktree can hold several agent panes, but it has only one LED, so Raft reduces them by precedence — `waiting` → `blocked` → `working` → `done` → `interrupted` → `idle`. Note `done` outranks `interrupted`: interrupt one pane while a sibling pane has just finished, and the key stays green until that green goes stale, rather than turning purple. Single-pane worktrees, which is the normal case, are unaffected.
 - **Green auto-fades to off.** A finished (green) LED switches itself off 2 min after the turn ends (`DUCKYPAD_FADE_SEC` to tune), so stale green doesn't linger. Red (failed) does **not** fade; it stays lit until the next state. cmux does this with a detached, token-cancelled fader — any newer state supersedes the pending fade. Orca needs no such bookkeeping: staleness is a pure function of `ps` output plus the clock, so the hook just schedules an idempotent repaint for when the oldest green expires.
 - **cmux only: requires `reorderOnNotification` off.** On cmux both channels address workspaces by *sidebar position* — the LED writer via `index+1` and the ⌘1–5 jump via cmux's "select workspace N". cmux's `app.reorderOnNotification` (default **on**) bubbles a workspace to the top when it needs attention, which renumbers positions and desyncs the physical board. Set `"app": { "reorderOnNotification": false }` in `~/.config/cmux/cmux.json` and `cmux reload-config`. Raft's status LEDs replace what bubbling gave you. (Positions still shift if you *close* a middle workspace or drag rows — inherent to positional addressing.) **Orca needs none of this**, because its board is name-addressed.
-- **Orca is addressed by name, not position.** `⌘1`–`⌘9` index the *visible* rows of a project→repo→worktree tree, and neither the row order, the collapse state, nor the `sortOrder` Orca renumbers on its own is exposed by its CLI — so there is nothing stable to count. Hence `board.json` and the typed-query macros.
-- **A stale Orca board query can *create* a worktree.** Orca's ⌘J palette offers "create a worktree" when a query matches nothing, and it is a plain list row — so the pad's ⏎ can select it. Renaming a branch is enough to break a query. Re-run `python3 scripts/raft_board_verify.py` after any rename; if a key does create one, `orca worktree rm` it and regenerate the profile with `--no-enter` for a deliberate two-press variant.
-- **Ambiguous Orca queries are non-stationary.** With a query, Orca ranks matches by field tier (title, then branch/secondary text, then repo/workspace) and match position, breaking ties by most-recently-visited. So an ambiguous query's *winner changes with your browsing history* — which is why `raft_board_init.py` refuses ambiguity rather than warning about it. Unique queries are immune. `raft_board_verify.py` models the tiers Orca exposes but not its type aliases, so treat it as a strong check, not a proof.
-- **Leave Orca's `terminalShortcutPolicy` on its default `orca-first`.** Set to terminal-first, ⌘J is delivered to the focused pane instead of Orca and the top row stops working from inside a session — exactly where you press it. Expect a cosmetic "Terminal shortcut handled by Orca" toast when you do; it dismisses itself.
+- **Orca needs its sidebar sort set to Manual.** The top row addresses worktrees by position (`⌘1`–`⌘5` = Nth worktree row), and Orca's default `smart` sort re-ranks rows by agent state and attention — so a key silently changes meaning while you work. `manual` keys off the order you dragged and ignores agent state. This is the only Orca setting Raft depends on.
+- **Only rows 1–5 have keys, and only rows 1–9 are reachable at all.** Orca's positional binding stops at `⌘9`, so a worktree further down the sidebar cannot be jumped to by any keystroke. The `Jump` key (`⌘J`) stays as the escape hatch. Collapsing a group also removes its worktrees from the row count, shifting everything below it.
+- **Rearranging Orca desynchronises the LEDs until you re-run `raft_board_init.py`.** The keys stay correct by construction — `⌘3` is always row 3 — but `board.json` still says which worktree row 3 *was*, so its colour reports the wrong agent. It's a one-command fix and `raft_board_verify.py` catches the dead-row case, but nothing detects a silent swap between two live worktrees.
+- **Leave Orca's `terminalShortcutPolicy` on its default `orca-first`.** It is what lets ⌘-shortcuts reach Orca from inside a focused terminal pane. Set to terminal-first, `⌘1`–`⌘5` and `⌘J` go to the pane instead and the top row stops working from exactly where you press it. Expect a cosmetic "Terminal shortcut handled by Orca" toast; it dismisses itself. Note this applies only to ⌘ keys — the bare-`Esc` keys (Intrpt, Rewind) always go to whatever has focus, so they reach Claude only when its pane is focused.
 - **The pad's loaded profile decides who owns the board.** With both hosts installed, the LED writer reads the pad's current profile over HID and refuses writes from the other host, so a cmux session cannot repaint your Orca board. Profiles Raft did not push are treated as unowned and allowed, so a hand-made profile never locks you out.
 - **Orca ships its own Claude Code hook** on the same lifecycle events, as a sibling entry in the same `~/.claude/settings.json`. Raft's entry survived the 1.4.184 → 1.4.185 upgrade here, but after any Orca upgrade run the one-liner in [`docs/calibration.md`](docs/calibration.md#after-an-orca-upgrade) to confirm it is still there.
 - **Sleep.** Set the pad's sleep to a long value or Never — waking reloads the profile; the firmware's host-override layer re-asserts status colors on same-profile wake, but Never avoids the whole question.

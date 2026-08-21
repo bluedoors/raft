@@ -1,22 +1,25 @@
 #!/usr/bin/env python3
-"""Generate the 'cmux' duckyPad profile (plan §9) as SD-card files.
+"""Generate a duckyPad profile ('cmux' or 'orca') as SD-card files.
 
 Maps PHYSICAL key number -> action, using the calibrated landscape grid
 (USB top-left). File keyN corresponds to LED index N-1:
 
   landscape LED-index grid        ->   key-file grid (LED idx + 1)
-    top:    2  5  8 11 14                top:  key3  key6  key9  key12 key15  (WS1..WS5)
+    top:    2  5  8 11 14                top:  key3  key6  key9  key12 key15  (1..5)
     mid:    1  4  7 10 13                mid:  key2  key5  key8  key11 key14
     bot:    0  3  6  9 12                bot:  key1  key4  key7  key10 key13
 
 Needs a Python 3.10+ (the Configurator source uses 3.10+ syntax):
-  python3 duckypad_build_profile.py
-Writes ./profile_cmux/ next to this script (config.txt, keyN.txt, keyN.dsb).
+  python3 duckypad_build_profile.py --host orca
+Writes ./profile_<host>/ next to this script (config.txt, keyN.txt, keyN.dsb).
+
+The output does NOT depend on ~/.config/raft/board.json. Both hosts address the
+top row positionally (⌘1–⌘5), so the profile is a constant: generate and push it
+once, then rearrange your board freely without touching the pad again.
 """
 import os
 import io
 import sys
-import json
 import argparse
 import contextlib
 
@@ -47,71 +50,61 @@ COMMON_KEYS = {
     10: ("compact", "STRING /compact\nENTER", (90, 45, 0)),
     13: ("Auto/Pl", "SHIFT TAB",              (60, 0, 90)),  # plan / auto-accept
     # middle row, host-independent
-    5:  ("New WS",  "GUI n",                  (0, 50, 60)),  # ⌘N on both hosts
     11: ("Rewind",  "ESCAPE\nESCAPE",         (60, 5, 28)),
     14: ("Intrpt",  "ESCAPE",                 (90, 20, 0)),
 }
 
-# Middle-row keys that differ per host.
+# Middle-row keys that differ per host. ⌘N is the same keystroke on both but
+# means different things, so the label is per-host: cmux makes a workspace,
+# Orca opens its create-WORKTREE flow.
 HOST_KEYS = {
     "cmux": {
         2: ("Unread",  "GUI SHIFT u",         (0, 50, 60)),
+        5: ("New WS",  "GUI n",               (0, 50, 60)),
         8: ("Next WS", "CTRL GUI ]",          (0, 50, 60)),
     },
     "orca": {
         # Orca has no jump-to-unread, so this becomes the bare switch palette.
+        # Mostly redundant now that the top row is ⌘1–⌘5, but harmless and it
+        # still reaches worktrees past row 9, which no key can address.
         2: ("Jump",    "GUI j",               (0, 50, 60)),
+        5: ("New WT",  "GUI n",               (0, 50, 60)),
         8: ("Next WT", "GUI SHIFT DOWNARROW", (0, 50, 60)),
     },
 }
 
 TOP_ROW = [3, 6, 9, 12, 15]          # physical keys, left→right in landscape
 TOP_ROW_COLOR = (25, 25, 25)         # hooks override this live
-# ⌘J → palette focused. MEASURED ON HARDWARE 2026-08-20: 150ms is far too short
-# for a COLD open (the first jump after the app has been idle). When the palette
-# is not yet focused, STRING types into whatever pane has focus — it leaked "raf"
-# into a live agent's prompt — and the trailing ENTER would then SUBMIT that text
-# as a prompt. Warm opens were fine at 150ms, which is exactly what makes a small
-# value dangerous: it works until it doesn't. 500ms costs nothing perceptible.
-PALETTE_OPEN_DELAY_MS = 500
-PALETTE_FILTER_DELAY_MS = 400        # > the palette's ~300ms debounce; verified on
-                                     # hardware with a 34-character query
 
 MAX_LABEL = 7
 
 
-def top_row_keys(host, slots, send_enter=True):
-    """The five status/jump keys for `host`.
+def top_row_keys(host, slots=None):
+    """The five status/jump keys. Positional on BOTH hosts: ⌘1–⌘5.
 
-    cmux addresses workspaces positionally. Orca cannot: ⌘N indexes visible
-    worktree rows in a tree whose order and collapse state its CLI does not
-    expose, so each key types a uniqueness-checked query into the ⌘J palette.
+    Orca's ⌘1–⌘9 selects the Nth worktree row in the sidebar, and with the
+    sidebar's sort set to Manual that row order is whatever you dragged — it no
+    longer churns as agents change state. So the key is a single instant
+    keystroke that cannot mistarget: "go to row 3" is true by construction.
+
+    The earlier Orca design typed a name into the ⌘J palette instead, because we
+    believed row order was unknowable. It worked, but it cost ~900ms of delays,
+    could type into a live prompt if the palette opened slowly, and — worst —
+    CREATED a worktree when its saved query went stale. All three are gone.
+
+    Labels are just "1".."5": which worktree a row holds is decided in Orca's
+    sidebar, so baking a name into the pad would only go stale. `slots` is
+    accepted and ignored for call-site compatibility.
     """
-    keys = {}
-    for i, keynum in enumerate(TOP_ROW):
-        if host == "cmux":
-            keys[keynum] = (f"WS{i + 1}", f"GUI {i + 1}", TOP_ROW_COLOR)
-            continue
-        if i >= len(slots):
-            keys[keynum] = ("--", "", TOP_ROW_COLOR)     # unbound slot: inert key
-            continue
-        slot = slots[i]
-        lines = ["GUI j",
-                 f"DELAY {PALETTE_OPEN_DELAY_MS}",
-                 f"STRING {slot['query']}",
-                 f"DELAY {PALETTE_FILTER_DELAY_MS}"]
-        if send_enter:
-            lines.append("ENTER")
-        label = (slot.get("label") or f"WT{i + 1}")[:MAX_LABEL]
-        keys[keynum] = (label, "\n".join(lines), TOP_ROW_COLOR)
-    return keys
+    return {keynum: (str(i + 1), f"GUI {i + 1}", TOP_ROW_COLOR)
+            for i, keynum in enumerate(TOP_ROW)}
 
 
-def build(host, slots, out_dir, send_enter=True):
+def build(host, out_dir):
     """Write config.txt + key*.{txt,dsb} for one host into out_dir."""
     keys = dict(COMMON_KEYS)
     keys.update(HOST_KEYS[host])
-    keys.update(top_row_keys(host, slots, send_enter=send_enter))
+    keys.update(top_row_keys(host))
     duckypad_compile = _compiler()
 
     os.makedirs(out_dir, exist_ok=True)
@@ -145,22 +138,12 @@ def build(host, slots, out_dir, send_enter=True):
 def main():
     ap = argparse.ArgumentParser(description="Generate a duckyPad profile for one host.")
     ap.add_argument("--host", choices=sorted(HOST_KEYS), default="cmux")
-    ap.add_argument("--board", default=os.path.expanduser("~/.config/raft/board.json"))
     ap.add_argument("--out", default=None)
-    ap.add_argument("--no-enter", action="store_true",
-                    help="type the palette query but do not send ENTER")
     args = ap.parse_args()
-
-    slots = []
-    if args.host == "orca":
-        try:
-            with open(args.board) as f:
-                slots = (json.load(f).get("slots") or [])[:len(TOP_ROW)]
-        except Exception as e:
-            print(f"no usable board at {args.board} ({e}) — top row will be inert.\n"
-                  f"Run: python3 scripts/raft_board_init.py --slots …")
+    # Deliberately independent of ~/.config/raft/board.json: the top row is five
+    # fixed keystrokes, so rearranging your board never needs a re-push.
     out = args.out or os.path.join(_HERE, f"profile_{args.host}")
-    build(args.host, slots, out, send_enter=not args.no_enter)
+    build(args.host, out)
 
 
 if __name__ == "__main__":

@@ -82,9 +82,10 @@ duplicates.
 | Flag | Default | Meaning |
 |---|---|---|
 | `--host {cmux,orca}` | `cmux` | Which host's middle row and top row to generate. |
-| `--board <path>` | `~/.config/raft/board.json` | Orca only: where the five top-row slots come from. Missing or unreadable → the top row is generated inert, with a pointer to `raft_board_init.py`. |
+
 | `--out <dir>` | `profile_<host>/` | Where to write. |
-| `--no-enter` | off | Orca only: type the palette query but **do not** send ⏎, so switching is a deliberate two-press action. Use this if a key ever creates a worktree. |
+
+The generator reads **no** board file: the top row is five fixed keystrokes on both hosts, so the profile is a constant.
 
 ## Ownership: the loaded profile decides
 
@@ -109,8 +110,8 @@ rejected.
 
 | Row | `cmux` | `orca` |
 |---|---|---|
-| **Top** (status LEDs) | `WS1`–`WS5` → `⌘1`–`⌘5` | your board's labels → `⌘J` + query + ⏎ |
-| **Middle** | Unread `⌘⇧U`, New WS `⌘N`, Next WS `⌃⌘]`, Rewind `Esc Esc`, Intrpt `Esc` | Jump `⌘J`, New WS `⌘N`, Next WT `⌘⇧↓`, Rewind `Esc Esc`, Intrpt `Esc` |
+| **Top** (status LEDs) | `1`–`5` → `⌘1`–`⌘5` | `1`–`5` → `⌘1`–`⌘5` (identical) |
+| **Middle** | Unread `⌘⇧U`, New WS `⌘N`, Next WS `⌃⌘]`, Rewind `Esc Esc`, Intrpt `Esc` | Jump `⌘J`, New WT `⌘N`, Next WT `⌘⇧↓`, Rewind `Esc Esc`, Intrpt `Esc` |
 | **Bottom** | Yes `yes`↵, No `no`↵, /clear, compact, Auto/Pl `⇧⇥` | identical |
 
 The shared keys live in `COMMON_KEYS`, the per-host middle row in `HOST_KEYS`,
@@ -118,41 +119,40 @@ and the top row is computed by `top_row_keys(host, slots)`. See
 [`../docs/calibration.md`](../docs/calibration.md) for how physical keys map to
 LED indices.
 
-## The Orca top-row macro, and why it has delays
+## Why the top row is positional on both hosts
 
-Each Orca top-row key is four or five duckyScript lines:
+`⌘1`–`⌘5`. On cmux that selects workspace N; on Orca it selects the Nth worktree
+row in the sidebar. One keystroke, no timing, no text.
 
-```
-GUI j            # open the ⌘J worktree switch palette
-DELAY 500        # wait for the palette to actually take focus
-STRING fix/vpc-reuse-and-multideploy-safety
-DELAY 400        # wait out the palette's ~300ms filter debounce
-ENTER            # select the top match
-```
+Raft's Orca top row used to type a uniqueness-checked query into the `⌘J`
+palette, because Orca has no per-worktree keybinding and its row order looked
+unknowable. That worked, and it cost:
 
-Neither delay is padding, and both were set by measurement rather than taste:
+- **~900 ms per press**, nearly all of it waiting — 500 ms for the palette to
+  take focus, 400 ms for its filter debounce.
+- **A prompt-injection hazard.** On a *cold* palette open the keystrokes arrived
+  before focus moved, so the query typed into whatever pane was focused. It leaked
+  `raf` into a live agent's prompt once; had the palette not opened at all, the
+  trailing `ENTER` would have submitted that text as a prompt.
+- **A create hazard.** Orca's palette offers "create a worktree" when a query
+  matches nothing, and that offer is a selectable row — so a query gone stale
+  (a renamed branch, a deleted worktree) meant a keypress *made* a worktree.
+  This fired for real: two keys went stale within a day of being configured.
 
-- **`PALETTE_OPEN_DELAY_MS = 500`.** A *warm* ⌘J focuses the palette in well
-  under 150 ms, which is exactly what makes a small value dangerous — it works
-  until it doesn't. On a **cold** open (first jump after the app has been idle)
-  150 ms was not enough: `STRING` began typing into the focused pane instead,
-  leaking `raf` into a live agent's prompt, and the palette caught only the
-  trailing `t`. Worse, had the palette not opened at all, the `ENTER` would have
-  **submitted** the leaked text to that agent. 500 ms costs nothing perceptible
-  and removes the class of failure.
-- **`PALETTE_FILTER_DELAY_MS = 400`.** The palette debounces filtering by about
-  300 ms. Press ⏎ before the list has re-filtered and you select whatever was
-  highlighted for the *previous* query. Verified on hardware with a
-  34-character query.
+Positional addressing removes all three. "Go to row 3" needs no delay, types
+nothing, and cannot create anything. The trade is that row order must be stable,
+which means **Orca's worktree sidebar sort must be set to Manual** — its default
+(`smart`) re-sorts by agent state, so rows move while you work.
 
-If a key ever lands on the wrong worktree or leaves the palette open, raise
-`PALETTE_FILTER_DELAY_MS` by 200 and regenerate; record the working values in
-[`../docs/calibration.md`](../docs/calibration.md#orca-palette-macro-timing).
+Two limits worth knowing:
 
-**The queries themselves must be unique.** A query matching nothing makes
-Orca's palette offer to *create* a worktree — and that offer is a selectable
-row, so ⏎ takes it. A query matching several is worse than it looks: Orca ranks
-matches by field tier then by most-recently-visited, so the winner changes as
-you browse. `scripts/raft_board_init.py` refuses non-unique selectors outright
-and `scripts/raft_board_verify.py` re-checks an existing board against live
-Orca. Run verify after renaming a branch.
+- **Only rows 1–9 are addressable**, and the pad uses 1–5. A worktree below row 5
+  has no key; below row 9, no keystroke can reach it at all. The `Jump` key
+  (`⌘J`) remains as the escape hatch.
+- **A collapsed group's worktrees are not rows**, so collapsing hides them from
+  the count and shifts everything below.
+
+Labels are `1`–`5` rather than project names on purpose: which worktree a row
+holds is decided in Orca, so a baked-in name would go stale the moment you
+rearrange. The LED mapping lives in `~/.config/raft/board.json` and is updated
+with `scripts/raft_board_init.py --rows …` — no regeneration, no push.

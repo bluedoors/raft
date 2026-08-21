@@ -1,18 +1,18 @@
 z1 Yes
 z2 Jump
-z3 raft
+z3 1
 z4 No
 z5 New WS
-z6 anthrop
+z6 2
 z7 /clear
 z8 Next WT
-z9 anthrop
+z9 3
 z10 compact
 z11 Rewind
-z12 sa-assi
+z12 4
 z13 Auto/Pl
 z14 Intrpt
-z15 radar
+z15 5
 BG_COLOR 0 0 0
 DIM_UNUSED_KEYS 0
 IS_LANDSCAPE 1
