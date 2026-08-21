@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Check ~/.config/raft/board.json against live Orca. Exit 1 if unsafe.
+"""Check ~/.config/raft/board.json against live Orca. Exit 1 if a row is dead.
 
-Run after renaming a branch or reshaping the board. A stale query is not
-cosmetic: Orca's palette would CREATE a worktree when the pad types it.
+Run after deleting a worktree or rearranging the sidebar. Nothing here can
+prevent a bad jump — ⌘1–⌘5 always land on real rows — so this is purely about
+the LEDs telling the truth: a row pointing at a deleted worktree goes dark and
+quietly stops reporting.
 """
 import json
 import os
@@ -27,10 +29,10 @@ def main():
     if problems:
         for p in problems:
             print(f"PROBLEM: {p}", file=sys.stderr)
-        print(f"\n{len(problems)} problem(s). Re-run raft_board_init.py, then "
-              f"rebuild and push the profile.", file=sys.stderr)
+        print(f"\n{len(problems)} problem(s). Re-run raft_board_init.py --rows … "
+              f"(no profile rebuild needed).", file=sys.stderr)
         return 1
-    print(f"board OK — {len(slots)} slot(s), every query uniquely resolved")
+    print(f"board OK — {len(slots)} row(s), every LED points at a live worktree")
     return 0
 
 
