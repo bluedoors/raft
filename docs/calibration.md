@@ -104,7 +104,7 @@ bottom:
 
 ```bash
 python3 scripts/raft_board_init.py --list          # what exists
-python3 scripts/raft_board_init.py --rows raft radar sa-assist
+python3 scripts/raft_board_init.py --rows raft radar billing-api
 python3 scripts/raft_board_verify.py               # every row still alive?
 ```
 

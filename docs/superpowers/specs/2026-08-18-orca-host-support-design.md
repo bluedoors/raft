@@ -29,7 +29,7 @@ addressing, so they are recorded here rather than summarised.
    firing session is a direct key match — no `cmux identify` equivalent needed.
 2. **`⌘1`–`⌘9` (`workspace.selectByIndex`) indexes visible *worktree rows* in the sidebar's
    project → repo → worktree tree.** Pressing `⌘2` selected the worktree whose breadcrumb is
-   `Territory-Management → sa-assist → main`, which is the second *worktree* row in the tree, and
+   `Reporting → billing-api → main`, which is the second *worktree* row in the tree, and
    is row 6 of `worktree list` (and row 5 by most-recent-activity). Collapsed repos contribute no
    rows, so the index also depends on expand/collapse state. **Neither the tree order nor the
    collapse state is exposed by the CLI**, so the index is not reproducible from data Raft can
@@ -66,7 +66,7 @@ addressing, so they are recorded here rather than summarised.
       `Create worktree "orca-host"` is present but **last and unselected**. Footer: `Enter → Open`.
       The query matched a substring of a longer display name, which is what the generator relies on.
     - **Ambiguous query** (`main`): five worktree rows, identical names, distinguished only by a
-      repo badge; the highlighted row was `sa-assist`, an order matching neither the sidebar nor
+      repo badge; the highlighted row was `billing-api`, an order matching neither the sidebar nor
       alphabetical — the matcher's own ranking. Unpredictable, hence build-time uniqueness.
     - **No-match query** (`zzqq`): exactly one row, `Create worktree "zzqq"`, **highlighted**.
       Hazard confirmed, not theoretical.
@@ -137,7 +137,7 @@ its own five-slot board: `~/.config/raft/board.json`.
 {
   "host": "orca",
   "slots": [
-    {"label": "raft",   "worktree": "…::/Users/awsbryn/code/bluedoors/raft", "query": "orca-host-support"},
+    {"label": "raft",   "worktree": "…::/Users/you/code/bluedoors/raft", "query": "orca-host-support"},
     {"label": "gateway","worktree": "…::/Users/…/anthropic-on-aws-vpc-reuse", "query": "vpc-reuse"}
   ]
 }

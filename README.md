@@ -106,7 +106,7 @@ The LEDs still need to know which worktree each row holds, and that lives in `~/
              { "label": "2", "worktree": "<worktreeId>" } ] }
 ```
 
-Write it with [`scripts/raft_board_init.py`](scripts/raft_board_init.py) by reading your sidebar top to bottom — `--rows raft radar sa-assist` — rather than hand-writing composite ids.
+Write it with [`scripts/raft_board_init.py`](scripts/raft_board_init.py) by reading your sidebar top to bottom — `--rows raft radar billing-api` — rather than hand-writing composite ids.
 
 > **Why positional, when Orca has no per-worktree shortcut?** Orca offers only `⌘1`–`⌘9` (Nth row), `⌘⇧↑/↓` (neighbour), `⌘⌥←` (history back) and `⌘J` (palette) — nothing that names a worktree. Raft originally typed a uniqueness-checked query into `⌘J`, because Orca's row order looked unknowable. With Manual sort it's stable, and "go to row 3" is true by construction: it can't mistarget, can't be ambiguous, and can't create a worktree. See [Known limitations](#known-limitations) for what it costs.
 
@@ -147,7 +147,7 @@ Orca has no stable positional addressing, so you tell Raft which five worktrees 
 python3 scripts/raft_board_init.py --list
 
 # 2. tell Raft which worktree each row holds, reading your sidebar top to bottom
-python3 scripts/raft_board_init.py --rows raft radar sa-assist
+python3 scripts/raft_board_init.py --rows raft radar billing-api
 
 # 3. generate + push the Orca profile (labels and macros come from the board)
 RAFT_CONFIG_SRC=/path/to/duckyPad-Configurator/src \

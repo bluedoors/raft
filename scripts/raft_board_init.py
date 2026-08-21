@@ -12,7 +12,7 @@ design doc).
 
 So you tell Raft, by reading your own sidebar top to bottom:
 
-  python3 scripts/raft_board_init.py --rows raft radar sa-assist
+  python3 scripts/raft_board_init.py --rows raft radar billing-api
 
 Selectors are case-insensitive substrings of a worktree's name, branch or repo,
 and must each match exactly one worktree — not because a wrong guess is
