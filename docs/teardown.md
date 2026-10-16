@@ -9,6 +9,10 @@ Everything Raft adds, and how to remove it.
 sudo rm -f /etc/sudoers.d/duckypad
 sudo rm -f /usr/local/libexec/duckypad_led.py
 sudo rm -rf /usr/local/libexec/duckypad-venv
+sudo rm -f /var/run/duckypad_led.lock
+
+# hook log + fade-token state
+rm -rf ~/.cache/raft
 ```
 
 Then remove the Raft hook entries from `~/.claude/settings.json` — the

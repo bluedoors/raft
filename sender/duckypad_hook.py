@@ -29,11 +29,15 @@ import time
 import subprocess
 import datetime
 
-LOG = "/tmp/duckypad_hook.log"
+# Per-user, owner-only paths rather than shared /tmp, where another local user could
+# pre-create the file or directory (or plant symlinks) before the hook first runs.
+CACHE_DIR = os.path.expanduser("~/.cache/raft")
+LOG = os.path.join(CACHE_DIR, "duckypad_hook.log")
 
 
 def _log(msg):
     try:
+        os.makedirs(CACHE_DIR, mode=0o700, exist_ok=True)
         with open(LOG, "a") as f:
             f.write(f"{datetime.datetime.now().isoformat()} {msg}\n")
     except Exception:
@@ -69,7 +73,7 @@ ORCA_TO_RAFT = {
 FADE_STATE = "done"
 FADE_TO = "off"
 FADE_DELAY_SEC = int(os.environ.get("DUCKYPAD_FADE_SEC", "120"))
-STATE_DIR = "/tmp/duckypad_state"
+STATE_DIR = os.path.join(CACHE_DIR, "duckypad_state")
 
 # Notification substate: split an idle "done, waiting for you" notice (-> idle,
 # dim purple) from a real permission/approval prompt (-> needs, blue). Keyed off
@@ -242,7 +246,7 @@ def _tok_path(ordinal):
 def _write_token(ordinal):
     """Stamp a fresh token for this ordinal; returns it (invalidates any pending fade)."""
     try:
-        os.makedirs(STATE_DIR, exist_ok=True)
+        os.makedirs(STATE_DIR, mode=0o700, exist_ok=True)
         tok = f"{time.time_ns()}-{os.getpid()}"
         with open(_tok_path(ordinal), "w") as f:
             f.write(tok)
